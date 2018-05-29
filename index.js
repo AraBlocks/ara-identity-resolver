@@ -3,6 +3,7 @@
 const { info, warn, error } = require('ara-console')
 const extend = require('extend')
 const debug = require('debug')('ara:network:node:identity-resolver')
+const dns = require('ara-network/dns')
 
 const conf = {
 }
@@ -12,7 +13,7 @@ let server = null
 async function start(argv) {
   if (server) { return false }
 
-  server =
+  server = dns.createServer(conf)
 
   server.on('error', onerror)
   server.on('close', onclose)
