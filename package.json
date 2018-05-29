@@ -1,0 +1,40 @@
+{
+  "name": "ara-network-node-identity-resolver",
+  "version": "1.0.0",
+  "description": "An ARA network node that resolves an identifier to its corresponding keystore",
+  "main": "index.js",
+  "scripts": {
+    "test": "ava test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AraBlocks/ara-network-node-identity-resolver.git"
+  },
+  "keywords": [
+    "ara",
+    "network",
+    "node",
+    "identity",
+    "resolver"
+  ],
+  "peerDependencies": {
+    "ara-network": "github:arablocks/ara-network"
+  },
+  "dependencies": {
+    "ara-console": "github:arablocks/ara-console",
+    "ara-crypto": "github:arablocks/ara-crypto",
+    "cfsnet": "github:arablocks/cfsnet",
+    "debug": "^3.1.0",
+    "extend": "^3.0.1",
+    "length-prefixed-message": "^3.0.3",
+    "pify": "^3.0.0",
+    "pump": "^3.0.0",
+    "through2": "^2.0.3"
+  },
+  "author": "Prashanth Balasubramani",
+  "license": "LGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/AraBlocks/ara-network-node-identity-resolver/issues"
+  },
+  "homepage": "https://github.com/AraBlocks/ara-network-node-identity-resolver#readme"
+}
