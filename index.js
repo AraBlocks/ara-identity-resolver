@@ -37,8 +37,8 @@ async function start (argv) {
         response.end(err.toString())
       }
     } else {
-      response.statusCode = 404
-      response.end('Invalid request method specified')
+      response.statusCode = 405
+      response.end('Method Not Allowed/Invalid URL')
     }
   })
   server.on('error', (err, request, response) => {
