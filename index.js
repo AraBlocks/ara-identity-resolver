@@ -26,7 +26,7 @@ async function start (argv) {
       if ('ara' != did.method) {
         debug('encountered non-ARA method')
         const err = new ResolutionError(`${did.method} method is not implemented`)
-        return next(err)
+        return response.writeHead(503).end(err)
       }
 
       const publicKey = did.identifier
@@ -56,14 +56,15 @@ async function start (argv) {
         const ddo = await cfs.readFile('ddo.json')
 
         if (!ddo) {
-          return res.status(404).end()
+          return response.writeHead(404).end()
         }
 
         const result = new ResolutionResult()
         result.didReference = did
         result.didDocument = ddo
 
-        return res.json(result.toJSON())
+        response.writeHead(200, { 'Content-Type': 'text/json' })
+        return response.end(result.toJSON())
       })
     }
   })
