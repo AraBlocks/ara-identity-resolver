@@ -8,18 +8,14 @@ const http = require('http')
 
 let server
 
-/**
- * Pass DID URI in, get identity out
- *
- * @return {json}       DDO document
- */
-
 async function start (argv) {
   info(`Starting resolver on port ${argv.port}`)
   server = http.createServer().listen(argv.port)
 
   server.on('request', async ({ method, url }, response) => {
     if (url.includes('/1.0/identifiers/') && method === 'GET') {
+      // Take everything after identifiers/ because a DID
+      // can contain slashes as well
       const urlSplit = url.split('/').slice(3).join('/')
       const did = parseDID(urlSplit)
 
