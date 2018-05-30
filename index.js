@@ -60,12 +60,11 @@ async function start (argv) {
           return res.status(404).end()
         }
 
-        return res.json({
-          didReference: did,
-          didDocument: ddo,
-          methodMetadata: {},
-          resolverMetadata: {}
-        })
+        const result = new ResolutionResult()
+        result.didReference = did
+        result.didDocument = ddo
+
+        return res.json(result.toJSON())
       })
     }
   })
