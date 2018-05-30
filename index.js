@@ -3,7 +3,6 @@ const { info, warn, error } = require('ara-console')
 const { parse: parseDID } = require('did-uri')
 const { createCFS } = require('cfsnet/create')
 const { sync } = require('ara-identity-archiver')
-const extend = require('extend')
 const debug = require('debug')('did-resolver')
 const http = require('http')
 
