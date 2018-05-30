@@ -19,7 +19,7 @@ async function start (argv) {
       const urlSplit = url.split('/').slice(3).join('/')
       const did = parseDID(urlSplit)
 
-      if ('ara' != did.method) {
+      if (did.method !== 'ara') {
         debug('encountered non-ARA method')
         const err = new ResolutionError(`${did.method} method is not implemented`)
         return response.writeHead(503).end(err)
