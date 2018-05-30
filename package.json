@@ -1,0 +1,19 @@
+{
+  "name": "ara-network-node-identity-resolver",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "did-uri": "github:arablocks/did-uri",
+    "ara-console": "github:arablocks/ara-console",
+    "ara-identity-archiver": "github:arablocks/ara-identity-archiver",
+    "did-universal-resolver-resolution": "github:arablocks/did-universal-resolver-resolution",
+    "ara-crypto": "github:arablocks/ara-crypto",
+    "cfsnet": "github:littlstar/cfsnet"
+  },
+  "author": "",
+  "license": "LGPL"
+}
