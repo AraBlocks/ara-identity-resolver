@@ -5,14 +5,16 @@ const pify = require('pify')
 const http = require('http')
 const extend = require('extend')
 const express = require('express')
+const through = require('through2')
 const ram = require('random-access-memory')
-const archiver = require('ara-identity-archiver/sync')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const { discoveryKey: createDiscoveryKey } = require('ara-crypto')
 const secrets = require('ara-network/secrets')
 const { info, warn, error } = require('ara-console')
 const { parse: parseDID } = require('did-uri')
 const { createCFS } = require('cfsnet/create')
+
+const { createServer } = require('ara-network/discovery')
 
 const app = express()
 const conf = {
@@ -25,85 +27,59 @@ let server = null
 
 async function start (argv) {
 
-  const { keystore } = JSON.parse(await pify(fs.readFile)(argv.keystore))
-  let opt = {
-    key: Buffer.alloc(16).fill(conf.key),
-    keystore: keystore
+  const discovery = createServer({stream})
+  const lookup = {}
+
+  server = app.listen(argv.port)
+  app.get('/1.0/identifiers/*?', onidentifier)
+  info('identity-resolver: Server listening on port %s', conf.port)
+
+  return true
+
+  function stream(peer) {
+    console.log('stream', peer);
+    if (peer && peer.channel) {
+      const discoveryKey = peer.channel.toString('hex')
+      if (discoveryKey in lookup) {
+        return lookup[discoveryKey].replicate({upload: true, download: true})
+      }
+    }
+    return through()
   }
 
-  const { network } = await archiver.connect(opt)
-  network.swarm.on('connection', (connection, peer)=>{
-    connection.on('error', (err)=>{
-      debug(err)
-      warn(err.message)
-    })
-
-  })
-  network.swarm.on('error', (err)=> {
-    debug(err)
-    warn(err.message)
-  })
-
-  app.get('/1.0/identifiers/*?', async (req, res, next) => {
+  async function onidentifier(req, res, next) {
     const did = parseDID(req.params[0])
 
-    //Object.assign(opt, { onidentifier, onstream, onkey })
     if ('ara' != did.method) {
       debug('encountered non-ARA method')
       debug(`${did.method} method is not implemented`)
-      return next(`${did.method} method is not implemented`)
+      return res.status(503).end()
     }
 
-    const publicKey = Buffer.from(did.identifier,'hex')
-    const cfs = await createCFS({
-      key: publicKey,
-      id: did.identifier,
-      storage: ram,
-      sparse: true
-    })
-    network.swarm.join(cfs.discoveryKey)
-    cfs.once('update', async () => {
-      console.log("Updating CFS")
-      cfs.readFile('ddo.json','utf8').then(async (ddo)=>{
-        console.log("Resolving DDO")
+    const key = Buffer.from(did.identifier, 'hex')
 
-        if (!ddo) {
-          res.status(404).end()
-          }
-        else{
-          res.send(JSON.stringify({
-              didReference: did,
-              didDocument: JSON.parse(ddo),
-              methodMetadata: {},
-              resolverMetadata: {}
-            }))
-          }
-        await cfs.close()
+    if (false == did.identifier in lookup) {
+      const { discoveryKey } = lookup[did.identifier] = await createCFS({key,
+        storage: ram,
+        //sparse: true,
+        id: key,
       })
-      .catch((err)=>{
-        console.log(err)
-      })
+
+      lookup[discoveryKey.toString('hex')] = lookup[did.identifier]
+      discovery.join(discoveryKey)
+    }
+
+    const cfs = lookup[did.identifier]
+    cfs.once('update', () => {
+      console.log('update');
     })
-
-    console.log("Connection made")
-    function onidentifier(connection, info) {
-      console.log("Identifier")
-      return cfs.identifier
+    try {
+      const ddo = await cfs.readFile('ddo.json')
+      console.log('ddo', ddo);
+    } catch (err) {
+      console.log('error', err);
     }
-
-    function onstream(connection, info) {
-      console.log("On stream ")
-      return cfs.replicate({ upload: false, download: true })
-    }
-
-    function onkey(connection, info) {
-      console.log("ON key")
-      return cfs.key
-    }
-  })
-  server = app.listen(argv.port)
-  info('identity-resolver: Server listening on port %s',conf.port)
-  return true
+  }
 }
 
 async function stop (argv) {
