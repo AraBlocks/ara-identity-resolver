@@ -11,15 +11,13 @@ const pump = require('pump')
 const ram = require('random-access-memory')
 const fs = require('fs')
 
+const kRequestTimeout = 2000 // in milliseconds
+
 const conf = {
-  key: null,
-  keystore: null,
   port: 8000
 }
 
 let server = null
-
-const kRequestTimeout = 2000 // in milliseconds
 
 async function getInstance (argv) {
   return server
@@ -34,21 +32,8 @@ async function configure (opts, program) {
         describe: 'Port to listen on',
         default: conf.port
       })
-      .option('key', {
-        alias: 'k',
-        type: 'string',
-        describe: 'Network Key',
-      })
-      .option('keystore', {
-        alias: 'K',
-        type: 'string',
-        describe: 'Path to the keystore file',
-        default: conf.port
-      })
 
-    if (argv.keystore) { opts.keystore = argv.keystore }
     if (argv.port) { opts.port = argv.port }
-    if (argv.key) { opts.key = argv.key }
   }
 
   return extend(true, conf, opts)
@@ -88,6 +73,7 @@ async function start (argv) {
   async function onidentifier(req, res, next) {
     const did = parseDID(req.params[0])
     debug("onidentifier:", did.reference)
+
     if ('ara' != did.method) {
       debug(`${did.method} method is not implemented`)
       return res.status(503).end()
