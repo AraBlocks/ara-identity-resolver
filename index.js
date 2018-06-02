@@ -2,22 +2,32 @@
 
 const { info, warn, error } = require('ara-console')
 const { parse: parseDID } = require('did-uri')
+const { createChannel } = require('ara-network/channel')
 const { createServer } = require('ara-network/discovery')
 const { createCFS } = require('cfsnet/create')
 const express = require('express')
+const secrets = require('ara-network/secrets')
 const extend = require('extend')
 const debug = require('debug')('ara:network:node:identity-resolver')
+const http = require('http')
+const pify = require('pify')
 const pump = require('pump')
 const ram = require('random-access-memory')
 const fs = require('fs')
 
-const kRequestTimeout = 2000 // in milliseconds
+const kRequestTimeout = 200 // in milliseconds
 
 const conf = {
-  port: 8000
+  'dns-announce-interval': 1000 * 60 * 2, // in milliseconds
+  'dht-announce-interval': 1000 * 60 * 2, // in milliseconds
+  keystore: null,
+  port: 8000,
+  key: null,
 }
 
+let app = null
 let server = null
+let channel = null
 
 async function getInstance (argv) {
   return server
@@ -29,11 +39,31 @@ async function configure (opts, program) {
       .option('port', {
         alias: 'p',
         type: 'number',
-        describe: 'Port to listen on',
+        describe: 'HTTP server port to listen on',
         default: conf.port
       })
+      .option('key', {
+        type: 'string',
+        alias: 'k',
+        describe: 'Network key.'
+      })
+      .option('keystore', {
+        type: 'string',
+        alias: 'K',
+        describe: 'Network keystore file path'
+      })
+      .option('dns-announce-interval', {
+        type: 'number',
+        describe: "Network announcement interval over DNS (milliseconds)",
+        default: conf['dns-announce-interval'],
+      })
+      .option('dht-announce-interval', {
+        type: 'number',
+        describe: "Network announcement interval over DHT (milliseconds)",
+        default: conf['dht-announce-interval'],
+      })
 
-    if (argv.port) { opts.port = argv.port }
+    extend(true, opts, argv)
   }
 
   return extend(true, conf, opts)
@@ -41,13 +71,69 @@ async function configure (opts, program) {
 
 async function start (argv) {
   const lookup = {}
-  const app = express()
 
-  server = app.listen(argv.port)
+  const keystore = {}
+  const keys = {
+    discoveryKey: null,
+    remote: null,
+    client: null,
+    network: null,
+  }
+
+  if (null == conf.key || 'string' != typeof conf.key) {
+    throw new TypeError("Expecting network key to be a string.")
+  }
+
+  if (conf.keystore && 'string' == typeof conf.keystore) {
+    try { await pify(fs.access)(conf.keystore) }
+    catch (err) {
+      throw new Error(`Unable to access keystore file '${conf.keystore}'.`)
+    }
+
+    try {
+      const { keystore } = JSON.parse(await pify(fs.readFile)(conf.keystore, 'utf8'))
+      Object.assign(keys, secrets.decrypt({keystore}, {key: conf.key}))
+    } catch (err) {
+      debug(err)
+      throw new Error(`Unable to read keystore file '${conf.keystore}'.`)
+    }
+  } else {
+    throw new TypeError("Missing keystore file path.")
+  }
+
+  Object.assign(conf, {discoveryKey: keys.discoveryKey})
+  Object.assign(conf, {
+    network: keys.network,
+    client: keys.client,
+    remote: keys.remote,
+  })
+
+  app = express()
+  server = http.createServer(app)
+  channel = createChannel({
+    dht: { interval: conf['dht-announce-interval'] },
+    dns: { interval: conf['dns-announce-interval'] },
+  })
+
+  const announcementTimeout = setTimeout(announce, 1000)
+
   app.get('/1.0/identifiers/*?', onidentifier)
-  info('identity-resolver: Server listening on port %s', conf.port)
+
+  server.listen(argv.port)
+  server.on('listening', announce)
+  server.once('error', (err) => {
+    if (err && 'EADDRINUSE' == err.code) { server.listen(0) }
+  })
 
   return true
+
+  function announce() {
+    clearTimeout(announcementTimeout)
+    const { port } = server.address()
+    info('identity-resolver: Server listening on port %s', port)
+    info("identity-resolver: Announcing %s on port %s", conf.discoveryKey.toString('hex'), port)
+    channel.join(conf.discoveryKey, port)
+  }
 
   function put(did, cfs) {
     if (did && did.identifier && cfs && cfs.discoveryKey) {
@@ -64,79 +150,118 @@ async function start (argv) {
     if (cfs && cfs.discoveryKey) {
       delete lookup[cfs.discoveryKey.toString('hex')]
     }
+
+    if (cfs) {
+      cfs.close()
+    }
   }
 
   function get(did) {
     return did && did.identifier ? lookup[did.identifier] : null
   }
 
+  function has(did) {
+    return did && did.identifier in lookup
+  }
+
   async function onidentifier(req, res, next) {
-    const did = parseDID(req.params[0])
-    debug("onidentifier:", did.reference)
-
-    if ('ara' != did.method) {
-      debug(`${did.method} method is not implemented`)
-      return res.status(503).end()
-    }
-
-    let discovery = null
     let closed = false
+    let did = null
 
-    const key = Buffer.from(did.identifier, 'hex')
-    const id = key.toString('hex')
+    try {
+      did = parseDID(req.params[0])
+      debug("onidentifier:", did.reference)
 
-    req.once('close', onclose)
-    req.once('end', onclose)
+      if ('ara' != did.method) {
+        debug(`${did.method} method is not implemented`)
+        return notImplemented()
+      }
 
-    if (did.identifier in lookup) { await onconnection() }
-    else {
-      const ttl = 1000 * 5 // in milliseconds
-      const cfs = await createCFS({ key, id, storage: ram })
+      if (did.identifier in lookup) {
+        return await onconnection()
+      }
+
+      const key = Buffer.from(did.identifier, 'hex')
+      const id = key.toString('hex')
+
+      // @TODO(jwerle): Cache on disk, instead of always using RAM
+      const ttl = 1000 * 60 // in milliseconds
+      const cfs = await createCFS({ key, id, storage: ram }) // @TODO(jwerle): Figure out an on-disk cache
       const timeout = setTimeout(ontimeout , kRequestTimeout)
-      discovery = createServer({stream: () => cfs.replicate()})
 
       put(did, cfs)
 
-      discovery.join(cfs.discoveryKey)
-      discovery.once('connection', () => setTimeout(onexpire, ttl))
-      discovery.once('connection', () => clearTimeout(timeout))
-      discovery.once('connection', onconnection)
+      cfs.discovery = createServer({stream: () => cfs.replicate()})
+      cfs.discovery.once('connection', () => setTimeout(onexpire, ttl))
+      cfs.discovery.once('connection', () => clearTimeout(timeout))
+      cfs.discovery.once('connection', onconnection)
+      cfs.discovery.join(cfs.discoveryKey)
+
+      req.once('close', onclose)
+      req.once('end', onclose)
 
       async function onexpire() {
         if (false == closed) { setTimeout(onexpire, ttl) }
-        else {
-          const cfs = get(did)
-          del(did, cfs)
-        }
+        else { del(did, get(did)) }
+      }
+
+    } catch (err) {
+      debug(err)
+      warn("error:", err.message)
+    }
+
+    function notImplemented() {
+      if (false == closed) {
+        return res.status(503).end()
+      }
+    }
+
+    function notFound() {
+      if (false == closed) {
+        return res.status(404).end()
+      }
+    }
+
+    function internalError() {
+      if (false == closed) {
+        return res.status(500).end()
       }
     }
 
     async function onconnection() {
-      const cfs = lookup[did.identifier]
+      info("%s: onconnection", did.identifier)
+      const cfs = get(did)
 
       try {
-        res.set('content-type', 'application/json')
-        res.send(await cfs.readFile('ddo.json'))
+        const timeout = setTimeout(notFound, kRequestTimeout)
+        const buffer = await cfs.readFile('ddo.json')
+        clearTimeout(timeout)
+        if (false == closed) {
+          res.set('content-type', 'application/json')
+          res.send(buffer)
+        }
+        info("%s: ddo.json ", did.identifier)
       } catch (err) {
         debug(err)
-        res.status(500).end()
+        internalError()
       } finally {
         return onclose()
       }
     }
 
     async function ontimeout() {
-      const cfs = lookup[did.identifier]
-      del(did, cfs)
+      del(did, get(did))
       onclose()
-      res.status(404).end()
+      return notFound()
     }
 
     async function onclose() {
       if (false == closed) {
         closed = true
-        if (discovery) {
-          discovery.destroy()
+        const cfs = get(did)
+        if (cfs && cfs.discovery) {
+          cfs.discovery.destroy()
+          cfs.discovery = null
         }
       }
     }
