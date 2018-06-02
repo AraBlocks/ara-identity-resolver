@@ -28,6 +28,7 @@
     "did-uri": "^0.2.4",
     "express": "^4.16.3",
     "extend": "^3.0.1",
+    "pify": "^3.0.0",
     "pump": "^3.0.0",
     "random-access-memory": "^3.0.0"
   },
