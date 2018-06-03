@@ -119,18 +119,22 @@ async function start (argv) {
 
   app.get('/1.0/identifiers/*?', onidentifier)
 
-  server.listen(argv.port)
-  server.on('listening', announce)
+  server.listen(argv.port, onlisten)
   server.once('error', (err) => {
-    if (err && 'EADDRINUSE' == err.code) { server.listen(0) }
+    if (err && 'EADDRINUSE' == err.code) { server.listen(0, onlisten) }
   })
 
   return true
 
+  function onlisten() {
+    const { port } = server.address()
+    info('identity-resolver: Server listening on port %s', port)
+    announce()
+  }
+
   function announce() {
     clearTimeout(announcementTimeout)
     const { port } = server.address()
-    info('identity-resolver: Server listening on port %s', port)
     info("identity-resolver: Announcing %s on port %s", conf.discoveryKey.toString('hex'), port)
     channel.join(conf.discoveryKey, port)
   }
