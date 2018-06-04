@@ -47,11 +47,6 @@ async function configure (opts, program) {
         alias: 'k',
         describe: 'Network key.'
       })
-      .option('keystore', {
-        type: 'string',
-        alias: 'K',
-        describe: 'Network keystore file path'
-      })
       .option('dns-announce-interval', {
         type: 'number',
         describe: "Network announcement interval over DNS (milliseconds)",
@@ -84,21 +79,13 @@ async function start (argv) {
     throw new TypeError("Expecting network key to be a string.")
   }
 
-  if (conf.keystore && 'string' == typeof conf.keystore) {
-    try { await pify(fs.access)(conf.keystore) }
-    catch (err) {
-      throw new Error(`Unable to access keystore file '${conf.keystore}'.`)
-    }
-
-    try {
-      const { keystore } = JSON.parse(await pify(fs.readFile)(conf.keystore, 'utf8'))
-      Object.assign(keys, secrets.decrypt({keystore}, {key: conf.key}))
-    } catch (err) {
-      debug(err)
-      throw new Error(`Unable to read keystore file '${conf.keystore}'.`)
-    }
-  } else {
-    throw new TypeError("Missing keystore file path.")
+  try {
+    const doc = await secrets.load(conf)
+    const { keystore } = doc.public || doc.secret
+    Object.assign(keys, secrets.decrypt({keystore}, {key: conf.key}))
+  } catch (err) {
+    debug(err)
+    throw new Error(`Unable to read keystore for '${conf.key}'.`)
   }
 
   Object.assign(conf, {discoveryKey: keys.discoveryKey})
@@ -123,8 +110,8 @@ async function start (argv) {
   server.once('error', (err) => {
     if (err && 'EADDRINUSE' == err.code) { server.listen(0, onlisten) }
   })
-
   return true
+
 
   function onlisten() {
     const { port } = server.address()
@@ -190,7 +177,7 @@ async function start (argv) {
 
       // @TODO(jwerle): Cache on disk, instead of always using RAM
       const ttl = 1000 * 60 // in milliseconds
-      const cfs = await createCFS({ key, id, storage: ram }) // @TODO(jwerle): Figure out an on-disk cache
+      const cfs = await createCFS({ key, id, shallow: true, storage: ram }) // @TODO(jwerle): Figure out an on-disk cache
       const timeout = setTimeout(ontimeout , kRequestTimeout)
 
       put(did, cfs)
@@ -234,6 +221,7 @@ async function start (argv) {
 
     async function onconnection() {
       info("%s: onconnection", did.identifier)
+      if (false == has(did)) { return }
       const cfs = get(did)
 
       try {
