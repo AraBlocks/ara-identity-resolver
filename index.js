@@ -13,6 +13,7 @@ const http = require('http')
 const pify = require('pify')
 const pump = require('pump')
 const ram = require('random-access-memory')
+const lru = require('lru-cache')
 const fs = require('fs')
 
 const kRequestTimeout = 200 // in milliseconds
@@ -20,6 +21,8 @@ const kRequestTimeout = 200 // in milliseconds
 const conf = {
   'dns-announce-interval': 1000 * 60 * 2, // in milliseconds
   'dht-announce-interval': 1000 * 60 * 2, // in milliseconds
+  'cache-max': Infinity,
+  'cache-ttl': 1000 * 5, // in milliseconds
   keystore: null,
   port: 8000,
   key: null,
@@ -47,6 +50,16 @@ async function configure (opts, program) {
         alias: 'k',
         describe: 'Network key.'
       })
+      .option('cache-max', {
+        type: 'number',
+        describe: 'Max entries in cache',
+        default: conf['cache-max']
+      })
+      .option('cache-ttl', {
+        type: 'number',
+        describe: 'Max age for entries in cache',
+        default: conf['cache-ttl']
+      })
       .option('dns-announce-interval', {
         type: 'number',
         describe: "Network announcement interval over DNS (milliseconds)",
@@ -65,9 +78,10 @@ async function configure (opts, program) {
 }
 
 async function start (argv) {
-  const lookup = {}
 
   const keystore = {}
+  const lookup = {}
+  const cache = lru({dispose}, conf['cache-max'], conf['cache-ttl'])
   const keys = {
     discoveryKey: null,
     remote: null,
@@ -119,6 +133,17 @@ async function start (argv) {
     announce()
   }
 
+  function dispose(key, cfs) {
+    if (key && cfs) {
+      warn("Disposing of %s", key)
+      if (cfs.discovery) {
+        cfs.discovery.destroy()
+      }
+      cfs.close()
+      delete lookup[cfs.key.toString('hex')]
+    }
+  }
+
   function announce() {
     clearTimeout(announcementTimeout)
     const { port } = server.address()
@@ -128,8 +153,8 @@ async function start (argv) {
 
   function put(did, cfs) {
     if (did && did.identifier && cfs && cfs.discoveryKey) {
+      cache.set(cfs.discoveryKey.toString('hex'), cfs)
       lookup[did.identifier] = cfs
-      lookup[cfs.discoveryKey.toString('hex')] = cfs
     }
   }
 
@@ -139,16 +164,14 @@ async function start (argv) {
     }
 
     if (cfs && cfs.discoveryKey) {
-      delete lookup[cfs.discoveryKey.toString('hex')]
-    }
-
-    if (cfs) {
-      //cfs.close()
+      cache.del(cfs.discoveryKey.toString('hex'))
     }
   }
 
   function get(did) {
-    return did && did.identifier ? lookup[did.identifier] : null
+    const cfs = did && did.identifier ? lookup[did.identifier] : null
+    if (cfs) { return cache.get(cfs.discoveryKey.toString('hex')) }
+    return cfs
   }
 
   function has(did) {
@@ -168,7 +191,7 @@ async function start (argv) {
         return notImplemented()
       }
 
-      if (did.identifier in lookup) {
+      if (has(did)) {
         return await onconnection()
       }
 
@@ -183,6 +206,7 @@ async function start (argv) {
         storage: ram, // @TODO(jwerle): Figure out an on-disk cache
         sparse: true,
       })
+
       const timeout = setTimeout(ontimeout , kRequestTimeout)
 
       put(did, cfs)
