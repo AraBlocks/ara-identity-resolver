@@ -143,7 +143,7 @@ async function start (argv) {
     }
 
     if (cfs) {
-      cfs.close()
+      //cfs.close()
     }
   }
 
@@ -177,10 +177,17 @@ async function start (argv) {
 
       // @TODO(jwerle): Cache on disk, instead of always using RAM
       const ttl = 1000 * 60 // in milliseconds
-      const cfs = await createCFS({ key, id, shallow: true, storage: ram }) // @TODO(jwerle): Figure out an on-disk cache
+      const cfs = await createCFS({ key, id,
+        sparseMetadata: true,
+        shallow: true,
+        storage: ram, // @TODO(jwerle): Figure out an on-disk cache
+        sparse: true,
+      })
       const timeout = setTimeout(ontimeout , kRequestTimeout)
 
       put(did, cfs)
+
+      cfs.download('ddo.json').catch(debug)
 
       cfs.discovery = createServer({stream: () => cfs.replicate()})
       cfs.discovery.once('connection', () => setTimeout(onexpire, ttl))
