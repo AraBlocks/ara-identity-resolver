@@ -181,7 +181,6 @@ async function start (argv) {
   async function onidentifier(req, res, next) {
     let closed = false
     let did = null
-
     try {
       did = parseDID(req.params[0])
       debug("onidentifier:", did.reference)
@@ -260,8 +259,19 @@ async function start (argv) {
         const buffer = await cfs.readFile('ddo.json')
         clearTimeout(timeout)
         if (false == closed) {
+	  let respObject = {
+	    "didReference": did,
+	    "didDocument": JSON.parse(buffer.toString('utf8')),
+	    "methodMetadata": {},
+	    "resolverMetadata": {
+		"driverId": "did:ara",
+		"driver": "HttpDriver",
+		"retrieved": new Date(),
+		"duration":0
+	    }
+	  }
           res.set('content-type', 'application/json')
-          res.send(buffer)
+          res.send(respObject)
         }
         info("%s: ddo.json ", did.identifier)
       } catch (err) {
