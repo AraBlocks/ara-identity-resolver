@@ -2,7 +2,7 @@
 
 const { info, warn, error } = require('ara-console')
 const { parse: parseDID } = require('did-uri')
-const { createChannel } = require('ara-network/channel')
+const { createChannel } = require('ara-network/discovery/channel')
 const { createServer } = require('ara-network/discovery')
 const { createCFS } = require('cfsnet/create')
 const express = require('express')
