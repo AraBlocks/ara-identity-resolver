@@ -266,10 +266,10 @@ async function start (argv) {
       	    didDocument: JSON.parse(buffer.toString('utf8')),
       	    methodMetadata: {},
       	    resolverMetadata: {
-        		  driverId: "did:ara",
-        		  driver: "HttpDriver",
-        		  retrieved: new Date(),
-        		  duration
+              driverId: "did:ara",
+              driver: "HttpDriver",
+              retrieved: new Date(),
+              duration
       	    }
       	  }
           res.set('content-type', 'application/json')
