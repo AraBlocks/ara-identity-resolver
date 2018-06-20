@@ -1,6 +1,6 @@
-'use strict'
 
-const { info, warn, error } = require('ara-console')
+
+const { info, warn } = require('ara-console')
 const { parse: parseDID } = require('did-uri')
 const { createChannel } = require('ara-network/discovery/channel')
 const { createServer } = require('ara-network/discovery')
@@ -10,19 +10,20 @@ const secrets = require('ara-network/secrets')
 const extend = require('extend')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('http')
-const pify = require('pify')
-const pump = require('pump')
 const ram = require('random-access-memory')
 const lru = require('lru-cache')
-const fs = require('fs')
 
-const kRequestTimeout = 200 // in milliseconds
+// in milliseconds
+const kRequestTimeout = 200
 
 const conf = {
-  'dns-announce-interval': 1000 * 60 * 2, // in milliseconds
-  'dht-announce-interval': 1000 * 60 * 2, // in milliseconds
+  // in milliseconds
+  'dns-announce-interval': 1000 * 60 * 2,
+  // in milliseconds
+  'dht-announce-interval': 1000 * 60 * 2,
   'cache-max': Infinity,
-  'cache-ttl': 1000 * 5, // in milliseconds
+  // in milliseconds
+  'cache-ttl': 1000 * 5,
   keystore: null,
   port: 8000,
   key: null,
@@ -32,11 +33,11 @@ let app = null
 let server = null
 let channel = null
 
-async function getInstance (argv) {
+async function getInstance() {
   return server
 }
 
-async function configure (opts, program) {
+async function configure(opts, program) {
   if (program) {
     const { argv } = program
       .option('port', {
@@ -62,12 +63,12 @@ async function configure (opts, program) {
       })
       .option('dns-announce-interval', {
         type: 'number',
-        describe: "Network announcement interval over DNS (milliseconds)",
+        describe: 'Network announcement interval over DNS (milliseconds)',
         default: conf['dns-announce-interval'],
       })
       .option('dht-announce-interval', {
         type: 'number',
-        describe: "Network announcement interval over DHT (milliseconds)",
+        describe: 'Network announcement interval over DHT (milliseconds)',
         default: conf['dht-announce-interval'],
       })
 
@@ -77,11 +78,9 @@ async function configure (opts, program) {
   return extend(true, conf, opts)
 }
 
-async function start (argv) {
-
-  const keystore = {}
+async function start(argv) {
   const lookup = {}
-  const cache = lru({dispose}, conf['cache-max'], conf['cache-ttl'])
+  const cache = lru({ dispose }, conf['cache-max'], conf['cache-ttl'])
   const keys = {
     discoveryKey: null,
     remote: null,
@@ -89,20 +88,20 @@ async function start (argv) {
     network: null,
   }
 
-  if (null == conf.key || 'string' != typeof conf.key) {
-    throw new TypeError("Expecting network key to be a string.")
+  if (null === conf.key || 'string' !== typeof conf.key) {
+    throw new TypeError('Expecting network key to be a string.')
   }
 
   try {
     const doc = await secrets.load(conf)
     const { keystore } = doc.public || doc.secret
-    Object.assign(keys, secrets.decrypt({keystore}, {key: conf.key}))
+    Object.assign(keys, secrets.decrypt({ keystore }, { key: conf.key }))
   } catch (err) {
     debug(err)
     throw new Error(`Unable to read keystore for '${conf.key}'.`)
   }
 
-  Object.assign(conf, {discoveryKey: keys.discoveryKey})
+  Object.assign(conf, { discoveryKey: keys.discoveryKey })
   Object.assign(conf, {
     network: keys.network,
     client: keys.client,
@@ -122,7 +121,7 @@ async function start (argv) {
 
   server.listen(argv.port, onlisten)
   server.once('error', (err) => {
-    if (err && 'EADDRINUSE' == err.code) { server.listen(0, onlisten) }
+    if (err && 'EADDRINUSE' === err.code) { server.listen(0, onlisten) }
   })
   return true
 
@@ -135,7 +134,7 @@ async function start (argv) {
 
   function dispose(key, cfs) {
     if (key && cfs) {
-      warn("Disposing of %s", key)
+      warn('Disposing of %s', key)
       if (cfs.discovery) {
         cfs.discovery.destroy()
       }
@@ -147,7 +146,7 @@ async function start (argv) {
   function announce() {
     clearTimeout(announcementTimeout)
     const { port } = server.address()
-    info("identity-resolver: Announcing %s on port %s", conf.discoveryKey.toString('hex'), port)
+    info('identity-resolver: Announcing %s on port %s', conf.discoveryKey.toString('hex'), port)
     channel.join(conf.discoveryKey, port)
   }
 
@@ -178,15 +177,16 @@ async function start (argv) {
     return did && did.identifier in lookup
   }
 
-  async function onidentifier(req, res, next) {
+  async function onidentifier(req, res) {
     let closed = false
     let did = null
     const now = Date.now()
+
     try {
       did = parseDID(req.params[0])
-      debug("onidentifier:", did.reference)
+      debug('onidentifier:', did.reference)
 
-      if ('ara' != did.method) {
+      if ('ara' !== did.method) {
         debug(`${did.method} method is not implemented`)
         return notImplemented()
       }
@@ -198,22 +198,28 @@ async function start (argv) {
       const key = Buffer.from(did.identifier, 'hex')
       const id = key.toString('hex')
 
-      // @TODO(jwerle): Cache on disk, instead of always using RAM
-      const ttl = 1000 * 60 // in milliseconds
-      const cfs = await createCFS({ key, id,
+      /*
+       * @TODO(jwerle): Cache on disk, instead of always using RAM
+       * in milliseconds
+       */
+      const ttl = 1000 * 60
+      const cfs = await createCFS({
+        key,
+        id,
         sparseMetadata: true,
         shallow: true,
-        storage: ram, // @TODO(jwerle): Figure out an on-disk cache
+        // @TODO(jwerle): Figure out an on-disk cache
+        storage: ram,
         sparse: true,
       })
 
-      const timeout = setTimeout(ontimeout , kRequestTimeout)
+      const timeout = setTimeout(ontimeout, kRequestTimeout)
 
       put(did, cfs)
 
       cfs.download('ddo.json').catch(debug)
 
-      cfs.discovery = createServer({stream: () => cfs.replicate()})
+      cfs.discovery = createServer({ stream: () => cfs.replicate() })
       cfs.discovery.once('connection', () => setTimeout(onexpire, ttl))
       cfs.discovery.once('connection', () => clearTimeout(timeout))
       cfs.discovery.once('connection', onconnection)
@@ -223,36 +229,37 @@ async function start (argv) {
       req.once('end', onclose)
 
       async function onexpire() {
-        if (false == closed) { setTimeout(onexpire, ttl) }
-        else { del(did, get(did)) }
+        if (false === closed) { setTimeout(onexpire, ttl) } else { del(did, get(did)) }
       }
-
     } catch (err) {
       debug(err)
-      warn("error:", err.message)
+      warn('error:', err.message)
     }
 
     function notImplemented() {
-      if (false == closed) {
+      if (false === closed) {
         return res.status(503).end()
       }
+      return null
     }
 
     function notFound() {
-      if (false == closed) {
+      if (false === closed) {
         return res.status(404).end()
       }
+      return null
     }
 
     function internalError() {
-      if (false == closed) {
+      if (false === closed) {
         return res.status(500).end()
       }
+      return null
     }
 
     async function onconnection() {
-      info("%s: onconnection", did.identifier)
-      if (false == has(did)) { return }
+      info('%s: onconnection', did.identifier)
+      if (false === has(did)) { return }
       const cfs = get(did)
 
       try {
@@ -260,27 +267,27 @@ async function start (argv) {
         const buffer = await cfs.readFile('ddo.json')
         clearTimeout(timeout)
         const duration = Date.now() - now
-        if (false == closed) {
-      	  const response = {
-      	    didReference: did,
-      	    didDocument: JSON.parse(buffer.toString('utf8')),
-      	    methodMetadata: {},
-      	    resolverMetadata: {
-              driverId: "did:ara",
-              driver: "HttpDriver",
+        if (false === closed) {
+          const response = {
+            didReference: did,
+            didDocument: JSON.parse(buffer.toString('utf8')),
+            methodMetadata: {},
+            resolverMetadata: {
+              driverId: 'did:ara',
+              driver: 'HttpDriver',
               retrieved: new Date(),
               duration
-      	    }
-      	  }
+            }
+          }
           res.set('content-type', 'application/json')
           res.send(response)
         }
-        info("%s: ddo.json ", did.identifier)
+        info('%s: ddo.json ', did.identifier)
       } catch (err) {
         debug(err)
         internalError()
       } finally {
-        return onclose()
+        onclose()
       }
     }
 
@@ -291,7 +298,7 @@ async function start (argv) {
     }
 
     async function onclose() {
-      if (false == closed) {
+      if (false === closed) {
         closed = true
         const cfs = get(did)
         if (cfs && cfs.discovery) {
@@ -300,16 +307,17 @@ async function start (argv) {
         }
       }
     }
+    return null
   }
 }
 
-async function stop (argv) {
-  if (server == null) { return false }
+async function stop() {
+  if (server === null) { return false }
 
   warn('identity-resolver: Stopping the server!!')
-  server.close()
+  server.close(onclose)
   return true
-  function onclose () {
+  function onclose() {
     server = null
   }
 }

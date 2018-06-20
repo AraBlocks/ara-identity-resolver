@@ -1,0 +1,6 @@
+{
+  "extends": "ara",
+  "rules": {
+    "no-inner-declarations": 0
+  }
+}
