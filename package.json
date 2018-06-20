@@ -4,7 +4,9 @@
   "description": "An ARA network node that resolves an identifier to its corresponding keystore",
   "main": "index.js",
   "scripts": {
-    "test": "ava test"
+    "test": ":",
+    "lint": "eslint .",
+    "lint-fix": "eslint . --fix"
   },
   "repository": {
     "type": "git",
@@ -32,6 +34,12 @@
     "pify": "^3.0.0",
     "pump": "^3.0.0",
     "random-access-memory": "^3.0.0"
+  },
+  "devDependencies": {
+    "ava": "^0.25.0",
+    "eslint": "^4.19.1",
+    "eslint-config-ara": "github:arablocks/eslint-config-ara",
+    "eslint-plugin-import": "^2.12.0"
   },
   "author": "Prashanth Balasubramani <prashanth@littlstar.com>",
   "license": "LGPL-3.0",
