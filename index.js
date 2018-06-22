@@ -1,5 +1,3 @@
-
-
 const { info, warn } = require('ara-console')
 const { parse: parseDID } = require('did-uri')
 const { createChannel } = require('ara-network/discovery/channel')
@@ -124,7 +122,6 @@ async function start(argv) {
     if (err && 'EADDRINUSE' === err.code) { server.listen(0, onlisten) }
   })
   return true
-
 
   function onlisten() {
     const { port } = server.address()
@@ -312,7 +309,7 @@ async function start(argv) {
 }
 
 async function stop() {
-  if (server === null) { return false }
+  if (null === server) { return false }
 
   warn('identity-resolver: Stopping the server!!')
   server.close(onclose)
