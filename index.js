@@ -1,15 +1,23 @@
-const { info, warn } = require('ara-console')
 const { parse: parseDID } = require('did-uri')
+const { unpack, keyRing } = require('ara-network/keys')
 const { createChannel } = require('ara-network/discovery/channel')
 const { createServer } = require('ara-network/discovery')
+const { info, warn } = require('ara-console')
 const { createCFS } = require('cfsnet/create')
+const { readFile } = require('fs')
+const { resolve } = require('path')
+const inquirer = require('inquirer')
+const { DID } = require('did-uri')
 const express = require('express')
-const secrets = require('ara-network/secrets')
+const crypto = require('ara-crypto')
 const extend = require('extend')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('http')
+const pify = require('pify')
 const ram = require('random-access-memory')
 const lru = require('lru-cache')
+const rc = require('ara-network/rc')(require('ara-identity/rc')())
+const ss = require('ara-secret-storage')
 
 // in milliseconds
 const kRequestTimeout = 200
@@ -22,7 +30,6 @@ const conf = {
   'cache-max': Infinity,
   // in milliseconds
   'cache-ttl': 1000 * 5,
-  keystore: null,
   port: 8000,
   key: null,
 }
@@ -38,16 +45,27 @@ async function getInstance() {
 async function configure(opts, program) {
   if (program) {
     const { argv } = program
+      .option('identity', {
+        alias: 'i',
+        describe: 'ARA identity for this network node. (Requires password)'
+      })
+      .option('secret', {
+        alias: 's',
+        describe: 'Shared secret key for network keys associated with this node.'
+      })
+      .option('name', {
+        alias: 'n',
+        describe: 'Human readable network keys name.'
+      })
+      .option('keys', {
+        alias: 'k',
+        describe: 'Path to ARA network keys'
+      })
       .option('port', {
         alias: 'p',
         type: 'number',
         describe: 'HTTP server port to listen on',
         default: conf.port
-      })
-      .option('key', {
-        type: 'string',
-        alias: 'k',
-        describe: 'Network key.'
       })
       .option('cache-max', {
         type: 'number',
@@ -70,6 +88,10 @@ async function configure(opts, program) {
         default: conf['dht-announce-interval'],
       })
 
+    if (argv.identity && 0 !== argv.identity.indexOf('did:ara:')) {
+      argv.identity = `did:ara:${argv.identity}`
+    }
+
     extend(true, opts, argv)
   }
 
@@ -79,32 +101,60 @@ async function configure(opts, program) {
 async function start(argv) {
   const lookup = {}
   const cache = lru({ dispose }, conf['cache-max'], conf['cache-ttl'])
-  const keys = {
-    discoveryKey: null,
-    remote: null,
-    client: null,
-    network: null,
-  }
-
-  if (null === conf.key || 'string' !== typeof conf.key) {
-    throw new TypeError('Expecting network key to be a string.')
-  }
 
   try {
-    const doc = await secrets.load(conf)
-    const { keystore } = doc.public || doc.secret
-    Object.assign(keys, secrets.decrypt({ keystore }, { key: conf.key }))
+    let { password } = await inquirer.prompt([ {
+      type: 'password',
+      name: 'password',
+      message:
+      'Please enter the passphrase associated with the node identity.\n' +
+      'Passphrase:'
+    } ])
+
+    const did = new DID(conf.identity)
+    const publicKey = Buffer.from(did.identifier, 'hex')
+
+    password = crypto.blake2b(Buffer.from(password))
+
+    const hash = crypto.blake2b(publicKey).toString('hex')
+    const path = resolve(rc.network.identity.root, hash, 'keystore/ara')
+
+    // attempt to decode keyring with a supplied secret falling
+    // back to an authenticated decode with the identity associated
+    // with this network node
+    try {
+      debug('')
+      const secret = Buffer.from(conf.secret)
+      const keyring = keyRing(conf.keys, { secret })
+
+      await keyring.ready()
+
+      const buffer = await keyring.get(conf.name)
+      const unpacked = unpack({ buffer })
+      Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
+    } catch (err) {
+      debug(err)
+
+      try {
+        const key = password.slice(0, 16)
+        const keystore = JSON.parse(await pify(readFile)(path, 'utf8'))
+        const secretKey = ss.decrypt(keystore, { key })
+        const keyring = keyRing(conf.keys, { secret: secretKey })
+
+        await keyring.ready()
+
+        const buffer = await keyring.get(conf.name)
+        const unpacked = unpack({ buffer })
+        Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
+      } catch (err) { // eslint-disable-line no-shadow
+        debug(err)
+        throw new Error('Unable to decode keys in keyring for identity.')
+      }
+    }
   } catch (err) {
     debug(err)
     throw new Error(`Unable to read keystore for '${conf.key}'.`)
   }
-
-  Object.assign(conf, { discoveryKey: keys.discoveryKey })
-  Object.assign(conf, {
-    network: keys.network,
-    client: keys.client,
-    remote: keys.remote,
-  })
 
   app = express()
   server = http.createServer(app)
@@ -119,8 +169,11 @@ async function start(argv) {
 
   server.listen(argv.port, onlisten)
   server.once('error', (err) => {
-    if (err && 'EADDRINUSE' === err.code) { server.listen(0, onlisten) }
+    if (err && 'EADDRINUSE' === err.code) {
+      server.listen(0, onlisten)
+    }
   })
+
   return true
 
   function onlisten() {
@@ -141,10 +194,14 @@ async function start(argv) {
   }
 
   function announce() {
-    clearTimeout(announcementTimeout)
     const { port } = server.address()
-    info('identity-resolver: Announcing %s on port %s', conf.discoveryKey.toString('hex'), port)
+    clearTimeout(announcementTimeout)
     channel.join(conf.discoveryKey, port)
+    info(
+      'identity-resolver: Announcing %s on port %s',
+      conf.discoveryKey.toString('hex'),
+      port
+    )
   }
 
   function put(did, cfs) {
@@ -195,10 +252,7 @@ async function start(argv) {
       const key = Buffer.from(did.identifier, 'hex')
       const id = key.toString('hex')
 
-      /*
-       * @TODO(jwerle): Cache on disk, instead of always using RAM
-       * in milliseconds
-       */
+      // @TODO(jwerle): Cache on disk, instead of always using RAM in ms
       const ttl = 1000 * 60
       const cfs = await createCFS({
         key,
@@ -226,7 +280,11 @@ async function start(argv) {
       req.once('end', onclose)
 
       async function onexpire() {
-        if (false === closed) { setTimeout(onexpire, ttl) } else { del(did, get(did)) }
+        if (false === closed) {
+          setTimeout(onexpire, ttl)
+        } else {
+          del(did, get(did))
+        }
       }
     } catch (err) {
       debug(err)
