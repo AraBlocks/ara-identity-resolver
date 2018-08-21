@@ -23,6 +23,8 @@ TODO
 
 * All Ara network nodes require an ARA ID & a shared network key to be generated. Please refer to [ara-network](https://github.com/AraBlocks/ara-network)'s [ANK CLI](https://github.com/AraBlocks/ara-network/blob/master/bin/ara-network-keys) & [ara-identity](https://github.com/AraBlocks/ara-identity)'s [AID CLI](https://github.com/AraBlocks/ara-identity/blob/master/bin/ara-identity)
 
+* To run Ara network nodes through the command line, please refer to [ara-network](https://github.com/AraBlocks/ara-network)'s [ANN CLI](https://github.com/AraBlocks/ara-network/blob/master/bin/ara-network-node)
+
 
 ### Programmatic
 
