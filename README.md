@@ -66,8 +66,12 @@ $ ann -t ara-network-node-identity-resolver -i <DID> \
            -k <path-to-keyring-public-file>
 ```
 
-To see usage help about this network node interface, run the following:
-
+To see usage help about this network node interface, ensure ara-network is linked:
+```sh
+$ cd ~/ara-network-node-identity-resolver && npm link
+$ cd ~/ara-network && npm link ara-network-node-identity-resolver
+```
+and run the following:
 ```sh
 $ ann -t ara-network-node-identity-resolver --help
 ```
