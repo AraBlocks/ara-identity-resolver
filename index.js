@@ -1,7 +1,6 @@
+const { createSwarm, createChannel } = require('ara-network/discovery')
 const { parse: parseDID } = require('did-uri')
 const { unpack, keyRing } = require('ara-network/keys')
-const { createChannel } = require('ara-network/discovery/channel')
-const { createServer } = require('ara-network/discovery')
 const { info, warn } = require('ara-console')
 const { createCFS } = require('cfsnet/create')
 const { readFile } = require('fs')
@@ -270,7 +269,11 @@ async function start(argv) {
 
       cfs.download('ddo.json').catch(debug)
 
-      cfs.discovery = createServer({ stream: () => cfs.replicate() })
+      cfs.discovery = createSwarm({
+        stream: () => cfs.replicate(),
+        utp: false
+      })
+
       cfs.discovery.once('connection', () => setTimeout(onexpire, ttl))
       cfs.discovery.once('connection', () => clearTimeout(timeout))
       cfs.discovery.once('connection', onconnection)
