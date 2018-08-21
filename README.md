@@ -38,13 +38,13 @@ const program = require('yargs')
 const { argv } = program
 
 void async function main() {
-  try { await identityResolver.configure(rc.network.node.identity-resolver, program) }
+  try { await identityResolver.configure(rc.network.node.identity.resolver, program) }
   catch (err) {
     await identityResolver.configure({
       identity: DID,
-      secret: <shared-secret-string>,
-      name: <keyring-name-entry>,
-      keyring: <path-to-keyring-public-file>
+      secret: 'shared-secret-string',
+      name: 'keyring-name-entry',
+      keyring: 'path-to-keyring-public-file',
     },
     program)
   }
@@ -58,7 +58,7 @@ With the `ann` (or `ara-network-node`) command line interface, you can
 invoke this network node by running the following:
 
 ```sh
-$ ann -t . -i <DID> \
+$ ann -t ara-network-node-identity-resolver -i <DID> \
            -s <shared-secret-string> \
            -n <keyring-name-entry> \
            -k <path-to-keyring-public-file>
@@ -67,7 +67,7 @@ $ ann -t . -i <DID> \
 To see usage help about this network node interface, run the following:
 
 ```sh
-$ ann -t . --help
+$ ann -t ara-network-node-identity-resolver --help
 ```
 
 ## See Also
