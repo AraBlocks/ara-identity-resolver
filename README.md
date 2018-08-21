@@ -26,7 +26,7 @@ TODO
 
 ### Programmatic
 
-[interface]: https://github.com/AraBlocks/ara-network/blob/master/nodes/README.md
+[interface]: https://github.com/AraBlocks/ara-network/blob/master/README.md
 
 The `ara-network-node-identity-resolver` module can be used programmatically as it
 conforms to the [`ara-network` node interface][interface].
@@ -73,6 +73,7 @@ $ ann -t . --help
 ## See Also
 
 * [ara-network](https://github.com/arablocks/ara-network)
+* [ara-idenity](https://github.com/AraBlocks/ara-identity)
 
 ## License
 
