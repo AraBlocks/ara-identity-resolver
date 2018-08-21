@@ -62,3 +62,7 @@ typings/
 .cfs/
 package-lock.json
 .DS_Store
+keyring
+keyring.pub
+keystore.pub
+keystore
