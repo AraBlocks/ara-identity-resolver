@@ -104,62 +104,57 @@ async function start(argv) {
 
   let { password } = argv
 
+  if (!password) {
+    const res = await inquirer.prompt([ {
+      type: 'password',
+      name: 'password',
+      message:
+      'Please enter the passphrase associated with the node identity.\n' +
+      'Passphrase:'
+    } ])
+    // eslint-disable-next-line
+    password = res.password
+  }
+
+  const did = new DID(conf.identity)
+  const publicKey = Buffer.from(did.identifier, 'hex')
+
+  password = crypto.blake2b(Buffer.from(password))
+
+  const hash = crypto.blake2b(publicKey).toString('hex')
+  const path = resolve(rc.network.identity.root, hash, 'keystore/ara')
+
+  // attempt to decode keyring with a supplied secret falling
+  // back to an authenticated decode with the identity associated
+  // with this network node
   try {
-    if (!password) {
-      const res = await inquirer.prompt([ {
-        type: 'password',
-        name: 'password',
-        message:
-        'Please enter the passphrase associated with the node identity.\n' +
-        'Passphrase:'
-      } ])
-      // eslint-disable-next-line
-      password = res.password
-    }
+    debug('')
+    const secret = Buffer.from(conf.secret)
+    const keyring = keyRing(conf.keyring, { secret })
 
-    const did = new DID(conf.identity)
-    const publicKey = Buffer.from(did.identifier, 'hex')
+    await keyring.ready()
 
-    password = crypto.blake2b(Buffer.from(password))
+    const buffer = await keyring.get(conf.name)
+    const unpacked = unpack({ buffer })
+    Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
+  } catch (err) {
+    debug(err)
 
-    const hash = crypto.blake2b(publicKey).toString('hex')
-    const path = resolve(rc.network.identity.root, hash, 'keystore/ara')
-
-    // attempt to decode keyring with a supplied secret falling
-    // back to an authenticated decode with the identity associated
-    // with this network node
     try {
-      debug('')
-      const secret = Buffer.from(conf.secret)
-      const keyring = keyRing(conf.keyring, { secret })
+      const key = password.slice(0, 16)
+      const keystore = JSON.parse(await pify(readFile)(path, 'utf8'))
+      const secretKey = ss.decrypt(keystore, { key })
+      const keyring = keyRing(conf.keyring, { secret: secretKey })
 
       await keyring.ready()
 
       const buffer = await keyring.get(conf.name)
       const unpacked = unpack({ buffer })
       Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
-    } catch (err) {
+    } catch (err) { // eslint-disable-line no-shadow
       debug(err)
-
-      try {
-        const key = password.slice(0, 16)
-        const keystore = JSON.parse(await pify(readFile)(path, 'utf8'))
-        const secretKey = ss.decrypt(keystore, { key })
-        const keyring = keyRing(conf.keyring, { secret: secretKey })
-
-        await keyring.ready()
-
-        const buffer = await keyring.get(conf.name)
-        const unpacked = unpack({ buffer })
-        Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
-      } catch (err) { // eslint-disable-line no-shadow
-        debug(err)
-        throw new Error('Unable to decode keys in keyring for identity.')
-      }
+      throw new Error('Unable to decode keys in keyring for identity.')
     }
-  } catch (err) {
-    debug(err)
-    throw new Error(`Unable to read keystore for '${conf.keyring}'.`)
   }
 
   app = express()
