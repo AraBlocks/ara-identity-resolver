@@ -42,50 +42,56 @@ async function getInstance() {
 }
 
 async function configure(opts, program) {
-  const { argv } = program
-    .option('i', {
-      alias: 'identity',
-      default: rc.network.identity.whoami,
-      describe: 'Ara Identity for the network node',
-    })
-    .option('s', {
-      alias: 'secret',
-      describe: 'Shared secret key'
-    })
-    .option('n', {
-      alias: 'name',
-      describe: 'Human readable network keys name.'
-    })
-    .option('k', {
-      alias: 'keyring',
-      default: rc.network.identity.keyring,
-      describe: 'Path to ARA network keys'
-    })
-    .option('p', {
-      alias: 'port',
-      describe: 'Port for network node to listen on.',
-      default: rc.network.identity.resolver.http.port
-    })
-    .option('cache-max', {
-      type: 'number',
-      describe: 'Max entries in cache',
-      default: conf['cache-max']
-    })
-    .option('cache-ttl', {
-      type: 'number',
-      describe: 'Max age for entries in cache',
-      default: conf['cache-ttl']
-    })
-    .option('dns-announce-interval', {
-      type: 'number',
-      describe: 'Network announcement interval over DNS (milliseconds)',
-      default: conf['dns-announce-interval'],
-    })
-    .option('dht-announce-interval', {
-      type: 'number',
-      describe: 'Network announcement interval over DHT (milliseconds)',
-      default: conf['dht-announce-interval'],
-    })
+  let argv = {}
+  if (program) {
+    program
+      .option('i', {
+        alias: 'identity',
+        default: rc.network.identity.whoami,
+        describe: 'Ara Identity for the network node',
+      })
+      .option('s', {
+        alias: 'secret',
+        describe: 'Shared secret key'
+      })
+      .option('n', {
+        alias: 'name',
+        describe: 'Human readable network keys name.'
+      })
+      .option('k', {
+        alias: 'keyring',
+        default: rc.network.identity.keyring,
+        describe: 'Path to ARA network keys'
+      })
+      .option('p', {
+        alias: 'port',
+        describe: 'Port for network node to listen on.',
+        default: rc.network.identity.resolver.http.port
+      })
+      .option('cache-max', {
+        type: 'number',
+        describe: 'Max entries in cache',
+        default: conf['cache-max']
+      })
+      .option('cache-ttl', {
+        type: 'number',
+        describe: 'Max age for entries in cache',
+        default: conf['cache-ttl']
+      })
+      .option('dns-announce-interval', {
+        type: 'number',
+        describe: 'Network announcement interval over DNS (milliseconds)',
+        default: conf['dns-announce-interval'],
+      })
+      .option('dht-announce-interval', {
+        type: 'number',
+        describe: 'Network announcement interval over DHT (milliseconds)',
+        default: conf['dht-announce-interval'],
+      })
+
+    // eslint-disable-next-line prefer-destructuring
+    argv = program.argv
+  }
 
   if (argv.identity && 0 !== argv.identity.indexOf('did:ara:')) {
     argv.identity = `did:ara:${argv.identity}`
