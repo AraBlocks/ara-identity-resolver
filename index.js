@@ -9,7 +9,7 @@ const inquirer = require('inquirer')
 const { DID } = require('did-uri')
 const express = require('express')
 const crypto = require('ara-crypto')
-const extend = require('extend')
+const coalesce = require('defined')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('http')
 const pify = require('pify')
@@ -42,60 +42,69 @@ async function getInstance() {
 }
 
 async function configure(opts, program) {
-  if (program) {
-    const { argv } = program
-      .option('i', {
-        alias: 'identity',
-        default: rc.network.identity.whoami,
-        describe: 'Ara Identity for the network node',
-      })
-      .option('s', {
-        alias: 'secret',
-        describe: 'Shared secret key'
-      })
-      .option('n', {
-        alias: 'name',
-        describe: 'Human readable network keys name.'
-      })
-      .option('k', {
-        alias: 'keyring',
-        default: rc.network.identity.keyring,
-        describe: 'Path to ARA network keys'
-      })
-      .option('p', {
-        alias: 'port',
-        describe: 'Port for network node to listen on.',
-        default: rc.network.identity.resolver.http.port
-      })
-      .option('cache-max', {
-        type: 'number',
-        describe: 'Max entries in cache',
-        default: conf['cache-max']
-      })
-      .option('cache-ttl', {
-        type: 'number',
-        describe: 'Max age for entries in cache',
-        default: conf['cache-ttl']
-      })
-      .option('dns-announce-interval', {
-        type: 'number',
-        describe: 'Network announcement interval over DNS (milliseconds)',
-        default: conf['dns-announce-interval'],
-      })
-      .option('dht-announce-interval', {
-        type: 'number',
-        describe: 'Network announcement interval over DHT (milliseconds)',
-        default: conf['dht-announce-interval'],
-      })
+  const { argv } = program
+    .option('i', {
+      alias: 'identity',
+      default: rc.network.identity.whoami,
+      describe: 'Ara Identity for the network node',
+    })
+    .option('s', {
+      alias: 'secret',
+      describe: 'Shared secret key'
+    })
+    .option('n', {
+      alias: 'name',
+      describe: 'Human readable network keys name.'
+    })
+    .option('k', {
+      alias: 'keyring',
+      default: rc.network.identity.keyring,
+      describe: 'Path to ARA network keys'
+    })
+    .option('p', {
+      alias: 'port',
+      describe: 'Port for network node to listen on.',
+      default: rc.network.identity.resolver.http.port
+    })
+    .option('cache-max', {
+      type: 'number',
+      describe: 'Max entries in cache',
+      default: conf['cache-max']
+    })
+    .option('cache-ttl', {
+      type: 'number',
+      describe: 'Max age for entries in cache',
+      default: conf['cache-ttl']
+    })
+    .option('dns-announce-interval', {
+      type: 'number',
+      describe: 'Network announcement interval over DNS (milliseconds)',
+      default: conf['dns-announce-interval'],
+    })
+    .option('dht-announce-interval', {
+      type: 'number',
+      describe: 'Network announcement interval over DHT (milliseconds)',
+      default: conf['dht-announce-interval'],
+    })
 
-    if (argv.identity && 0 !== argv.identity.indexOf('did:ara:')) {
-      argv.identity = `did:ara:${argv.identity}`
-    }
-
-    extend(true, opts, argv)
+  if (argv.identity && 0 !== argv.identity.indexOf('did:ara:')) {
+    argv.identity = `did:ara:${argv.identity}`
   }
 
-  return extend(true, conf, opts)
+  conf.port = select('port', argv, opts, conf)
+  conf.name = select('name', argv, opts, conf)
+  conf.secret = select('secret', argv, opts, conf)
+  conf.keyring = select('keyring', argv, opts, conf)
+  conf.identity = select('identity', argv, opts, conf)
+
+  conf['cache-max'] = select('cache-max', argv, opts, conf)
+  conf['cache-ttl'] = select('cache-ttl', argv, opts, conf)
+  conf['dns-announce-interval'] = select('dns-announce-interval', argv, opts, conf)
+  conf['dht-announce-interval'] = select('dhy-announce-interval', argv, opts, conf)
+
+  function select(k, ...args) {
+    return coalesce(...args.map(o => o[k]))
+  }
 }
 
 async function start(argv) {
@@ -116,8 +125,8 @@ async function start(argv) {
     password = res.password
   }
 
-  const did = new DID(conf.identity)
-  const publicKey = Buffer.from(did.identifier, 'hex')
+  const { identifier } = new DID(conf.identity)
+  const publicKey = Buffer.from(identifier, 'hex')
 
   password = crypto.blake2b(Buffer.from(password))
 
