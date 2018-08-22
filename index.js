@@ -102,14 +102,20 @@ async function start(argv) {
   const lookup = {}
   const cache = lru({ dispose }, conf['cache-max'], conf['cache-ttl'])
 
+  let { password } = argv
+
   try {
-    let { password } = await inquirer.prompt([ {
-      type: 'password',
-      name: 'password',
-      message:
-      'Please enter the passphrase associated with the node identity.\n' +
-      'Passphrase:'
-    } ])
+    if (!password) {
+      const res = await inquirer.prompt([ {
+        type: 'password',
+        name: 'password',
+        message:
+        'Please enter the passphrase associated with the node identity.\n' +
+        'Passphrase:'
+      } ])
+      // eslint-disable-next-line
+      password = res.password
+    }
 
     const did = new DID(conf.identity)
     const publicKey = Buffer.from(did.identifier, 'hex')
@@ -153,7 +159,7 @@ async function start(argv) {
     }
   } catch (err) {
     debug(err)
-    throw new Error(`Unable to read keystore for '${conf.key}'.`)
+    throw new Error(`Unable to read keystore for '${conf.keyring}'.`)
   }
 
   app = express()
