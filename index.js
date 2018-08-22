@@ -15,7 +15,7 @@ const http = require('http')
 const pify = require('pify')
 const ram = require('random-access-memory')
 const lru = require('lru-cache')
-const rc = require('ara-network/rc')(require('ara-identity/rc')())
+const rc = require('./rc')()
 const ss = require('ara-secret-storage')
 
 // in milliseconds
@@ -29,7 +29,7 @@ const conf = {
   'cache-max': Infinity,
   // in milliseconds
   'cache-ttl': 1000 * 5,
-  port: 8000,
+  port: rc.network.identity.resolver.http.port,
   key: null,
 }
 
@@ -44,27 +44,28 @@ async function getInstance() {
 async function configure(opts, program) {
   if (program) {
     const { argv } = program
-      .option('identity', {
-        alias: 'i',
-        describe: 'ARA identity for this network node. (Requires password)'
+      .option('i', {
+        alias: 'identity',
+        default: rc.network.identity.whoami,
+        describe: 'Ara Identity for the network node',
       })
-      .option('secret', {
-        alias: 's',
-        describe: 'Shared secret key for network keys associated with this node.'
+      .option('s', {
+        alias: 'secret',
+        describe: 'Shared secret key'
       })
-      .option('name', {
-        alias: 'n',
+      .option('n', {
+        alias: 'name',
         describe: 'Human readable network keys name.'
       })
-      .option('keys', {
-        alias: 'k',
+      .option('k', {
+        alias: 'keyring',
+        default: rc.network.identity.keyring,
         describe: 'Path to ARA network keys'
       })
-      .option('port', {
-        alias: 'p',
-        type: 'number',
-        describe: 'HTTP server port to listen on',
-        default: conf.port
+      .option('p', {
+        alias: 'port',
+        describe: 'Port for network node to listen on.',
+        default: rc.network.identity.resolver.http.port
       })
       .option('cache-max', {
         type: 'number',
@@ -124,7 +125,7 @@ async function start(argv) {
     try {
       debug('')
       const secret = Buffer.from(conf.secret)
-      const keyring = keyRing(conf.keys, { secret })
+      const keyring = keyRing(conf.keyring, { secret })
 
       await keyring.ready()
 
@@ -138,7 +139,7 @@ async function start(argv) {
         const key = password.slice(0, 16)
         const keystore = JSON.parse(await pify(readFile)(path, 'utf8'))
         const secretKey = ss.decrypt(keystore, { key })
-        const keyring = keyRing(conf.keys, { secret: secretKey })
+        const keyring = keyRing(conf.keyring, { secret: secretKey })
 
         await keyring.ready()
 
@@ -177,16 +178,18 @@ async function start(argv) {
 
   function onlisten() {
     const { port } = server.address()
-    info('identity-resolver: Server listening on port %s', port)
+    info('identity-resolver: HTTP server listening on port %s', port)
     announce()
   }
 
   function dispose(key, cfs) {
     if (key && cfs) {
       warn('Disposing of %s', key)
+
       if (cfs.discovery) {
         cfs.discovery.destroy()
       }
+
       cfs.close()
       delete lookup[cfs.key.toString('hex')]
     }
