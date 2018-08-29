@@ -6,10 +6,10 @@ const { createCFS } = require('cfsnet/create')
 const { readFile } = require('fs')
 const { resolve } = require('path')
 const inquirer = require('inquirer')
+const coalesce = require('defined')
 const { DID } = require('did-uri')
 const express = require('express')
 const crypto = require('ara-crypto')
-const coalesce = require('defined')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('http')
 const pify = require('pify')
@@ -37,6 +37,10 @@ let app = null
 let server = null
 let channel = null
 
+function toHex(b) {
+  return b.toString('hex')
+}
+
 async function getInstance() {
   return server
 }
@@ -55,8 +59,8 @@ async function configure(opts, program) {
         describe: 'Shared secret key'
       })
       .option('n', {
-        alias: 'name',
-        describe: 'Human readable network keys name.'
+        alias: 'network',
+        describe: 'Human readable network name for keys in keyring.'
       })
       .option('k', {
         alias: 'keyring',
@@ -98,9 +102,9 @@ async function configure(opts, program) {
   }
 
   conf.port = select('port', argv, opts, conf)
-  conf.name = select('name', argv, opts, conf)
   conf.secret = select('secret', argv, opts, conf)
   conf.keyring = select('keyring', argv, opts, conf)
+  conf.network = select('network', argv, opts, conf)
   conf.identity = select('identity', argv, opts, conf)
 
   conf['cache-max'] = select('cache-max', argv, opts, conf)
@@ -115,7 +119,16 @@ async function configure(opts, program) {
 
 async function start(argv) {
   const lookup = {}
-  const cache = lru({ dispose }, conf['cache-max'], conf['cache-ttl'])
+  const cache = lru({
+    dispose,
+    maxAge: 2 * conf['cache-ttl'],
+    max: 2 * conf['cache-max'],
+  })
+
+  const routeCache = lru({
+    maxAge: conf['cache-ttl'],
+    max: conf['cache-max'],
+  })
 
   let { password } = argv
 
@@ -136,7 +149,7 @@ async function start(argv) {
 
   password = crypto.blake2b(Buffer.from(password))
 
-  const hash = crypto.blake2b(publicKey).toString('hex')
+  const hash = toHex(crypto.blake2b(publicKey))
   const path = resolve(rc.network.identity.root, hash, 'keystore/ara')
 
   // attempt to decode keyring with a supplied secret falling
@@ -149,7 +162,7 @@ async function start(argv) {
 
     await keyring.ready()
 
-    const buffer = await keyring.get(conf.name)
+    const buffer = await keyring.get(conf.network)
     const unpacked = unpack({ buffer })
     Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
   } catch (err) {
@@ -163,7 +176,7 @@ async function start(argv) {
 
       await keyring.ready()
 
-      const buffer = await keyring.get(conf.name)
+      const buffer = await keyring.get(conf.network)
       const unpacked = unpack({ buffer })
       Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
     } catch (err) { // eslint-disable-line no-shadow
@@ -200,6 +213,7 @@ async function start(argv) {
 
   function dispose(key, cfs) {
     if (key && cfs) {
+      delete lookup[toHex(cfs.key)]
       warn('Disposing of %s', key)
 
       if (cfs.discovery) {
@@ -207,7 +221,6 @@ async function start(argv) {
       }
 
       cfs.close()
-      delete lookup[cfs.key.toString('hex')]
     }
   }
 
@@ -217,14 +230,14 @@ async function start(argv) {
     channel.join(conf.discoveryKey, port)
     info(
       'identity-resolver: Announcing %s on port %s',
-      conf.discoveryKey.toString('hex'),
+      toHex(conf.discoveryKey),
       port
     )
   }
 
   function put(did, cfs) {
     if (did && did.identifier && cfs && cfs.discoveryKey) {
-      cache.set(cfs.discoveryKey.toString('hex'), cfs)
+      cache.set(toHex(crypto.blake2b(cfs.key)), cfs)
       lookup[did.identifier] = cfs
     }
   }
@@ -235,40 +248,63 @@ async function start(argv) {
     }
 
     if (cfs && cfs.discoveryKey) {
-      cache.del(cfs.discoveryKey.toString('hex'))
+      cache.del(toHex(crypto.blake2b(cfs.key)))
     }
   }
 
   function get(did) {
     const cfs = did && did.identifier ? lookup[did.identifier] : null
-    if (cfs) { return cache.get(cfs.discoveryKey.toString('hex')) }
-    return cfs
+
+    if (cfs) {
+      return cache.get(toHex(crypto.blake2b(cfs.key)))
+    }
+
+    return null
   }
 
   function has(did) {
-    return did && did.identifier in lookup
+    const key = did && did.identifier
+    const dkey = key && crypto.blake2b(Buffer.from(key, 'hex'))
+    return Boolean(key && (key in lookup) && cache.peek(toHex(dkey)))
   }
 
   async function onidentifier(req, res) {
+    let didTimeout = false
     let closed = false
     let did = null
+
     const now = Date.now()
 
     try {
       did = parseDID(req.params[0])
       debug('onidentifier:', did.reference)
 
+      if (routeCache.has(did.reference)) {
+        const buffer = routeCache.get(did.reference)
+        const duration = Date.now() - now
+        const response = createResponse({ did, buffer, duration })
+        res.set('content-type', 'application/json')
+        res.send(response)
+        info('%s: ddo.json (cache)', did.identifier)
+        return
+      }
+
       if ('ara' !== did.method) {
         debug(`${did.method} method is not implemented`)
-        return notImplemented()
+        notImplemented()
+        return
       }
 
       if (has(did)) {
-        return await onconnection()
+        await onconnection()
+        return
       }
 
       const key = Buffer.from(did.identifier, 'hex')
-      const id = key.toString('hex')
+      const id = toHex(key)
+
+      // stub
+      put(did, { id, key })
 
       // @TODO(jwerle): Cache on disk, instead of always using RAM in ms
       const ttl = 1000 * 60
@@ -336,30 +372,47 @@ async function start(argv) {
 
     async function onconnection() {
       info('%s: onconnection', did.identifier)
-      if (false === has(did)) { return }
+
+      if (false === has(did)) {
+        notFound()
+        return
+      }
+
       const cfs = get(did)
 
-      try {
-        const timeout = setTimeout(notFound, kRequestTimeout)
-        const buffer = await cfs.readFile('ddo.json')
-        clearTimeout(timeout)
+      if (!cfs && routeCache.has(did.reference)) {
+        const buffer = routeCache.get(did.reference)
         const duration = Date.now() - now
+        const response = createResponse({ did, buffer, duration })
+
+        routeCache.set(did.reference, buffer)
+        res.set('content-type', 'application/json')
+        res.send(response)
+
+        info('%s: ddo.json (cache)', did.identifier)
+        return
+      }
+
+      try {
+        const timeout = setTimeout(ontimeout, kRequestTimeout)
+        const buffer = await cfs.readFile('ddo.json')
+
+        clearTimeout(timeout)
+
+        if (didTimeout) {
+          return
+        }
+
+        const duration = Date.now() - now
+
         if (false === closed) {
-          const response = {
-            didReference: did,
-            didDocument: JSON.parse(buffer.toString('utf8')),
-            methodMetadata: {},
-            resolverMetadata: {
-              driverId: 'did:ara',
-              driver: 'HttpDriver',
-              retrieved: new Date(),
-              duration
-            }
-          }
+          const response = createResponse({ did, buffer, duration })
+          routeCache.set(did.reference, buffer)
           res.set('content-type', 'application/json')
           res.send(response)
         }
-        info('%s: ddo.json ', did.identifier)
+
+        info('%s: ddo.json', did.identifier)
       } catch (err) {
         debug(err)
         internalError()
@@ -369,6 +422,7 @@ async function start(argv) {
     }
 
     async function ontimeout() {
+      didTimeout = true
       del(did, get(did))
       onclose()
       return notFound()
@@ -384,7 +438,20 @@ async function start(argv) {
         }
       }
     }
-    return null
+
+    function createResponse(opts) {
+      return {
+        didDocument: JSON.parse(opts.buffer),
+        didReference: opts.did,
+        methodMetadata: {},
+        resolverMetadata: {
+          retrieved: new Date(),
+          duration: opts.duration,
+          driverId: 'did:ara',
+          driver: 'HttpDriver',
+        }
+      }
+    }
   }
 }
 
