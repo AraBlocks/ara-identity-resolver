@@ -104,8 +104,12 @@ async function configure(opts, program) {
   conf.port = select('port', argv, opts, conf)
   conf.secret = select('secret', argv, opts, conf)
   conf.keyring = select('keyring', argv, opts, conf)
-  conf.network = select('network', argv, opts, conf)
+  conf.network = select('network', argv, opts, conf) || argv.name
   conf.identity = select('identity', argv, opts, conf)
+
+  if (argv.name && !argv.network) {
+    warn('Please use \'--network\' instead of \'--name\'.')
+  }
 
   conf['cache-max'] = select('cache-max', argv, opts, conf)
   conf['cache-ttl'] = select('cache-ttl', argv, opts, conf)
