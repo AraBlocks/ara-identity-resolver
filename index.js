@@ -1,7 +1,7 @@
 const { createSwarm, createChannel } = require('ara-network/discovery')
 const { parse: parseDID } = require('did-uri')
 const { unpack, keyRing } = require('ara-network/keys')
-const { info, warn } = require('ara-console')
+const { info, warn } = require('ara-console')('identity-resolver')
 const { createCFS } = require('cfsnet/create')
 const { readFile } = require('fs')
 const { resolve } = require('path')
@@ -13,6 +13,7 @@ const crypto = require('ara-crypto')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('http')
 const pify = require('pify')
+const pkg = require('./package.json')
 const ram = require('random-access-memory')
 const lru = require('lru-cache')
 const rc = require('./rc')()
@@ -49,29 +50,56 @@ async function configure(opts, program) {
   let argv = {}
   if (program) {
     program
-      .option('i', {
-        alias: 'identity',
+      .wrap(null)
+      .version('version', 'Show version number', pkg.version)
+      .group([ 'identity', 'secret', 'keyring', 'network' ], 'Network Options:')
+      .option('identity', {
+        alias: 'i',
         default: rc.network.identity.whoami,
-        describe: 'Ara Identity for the network node',
+        requiresArg: true,
+        required: true,
+
+        defaultDescription: (
+          rc.network.identity.whoami
+            ? `${rc.network.identity.whoami.slice(0, 16)}...`
+            : undefined
+        ),
+
+        describe:
+`A valid, local, and resolvable Ara identity DID
+URI of the owner of the given keyring. You will be
+prompted for the associated passphrase`,
       })
-      .option('s', {
-        alias: 'secret',
-        describe: 'Shared secret key'
+      .option('secret', {
+        alias: 's',
+        describe: 'Shared secret key for the associated network keys',
+        required: true,
+        requiresArg: true,
       })
-      .option('n', {
-        alias: 'network',
-        describe: 'Human readable network name for keys in keyring.'
-      })
-      .option('k', {
-        alias: 'keyring',
+      .option('keyring', {
+        alias: 'k',
         default: rc.network.identity.keyring,
-        describe: 'Path to ARA network keys'
+        describe: 'Path to Ara network keyring file',
+        required: true,
+        requiresArg: true,
       })
-      .option('p', {
-        alias: 'port',
+      .option('network', {
+        alias: 'n',
+        describe: 'Human readable network name for keys in keyring',
+        required: true,
+        requiresArg: true,
+      })
+
+    program.group([
+      'port', 'cache-max', 'cache-ttl',
+      'dns-announce-interval', 'dht-announce-interval'
+    ], 'Server Options:')
+      .option('port', {
+        alias: 'p',
         describe: 'Port for network node to listen on.',
         default: rc.network.identity.resolver.http.port
       })
+
       .option('cache-max', {
         type: 'number',
         describe: 'Max entries in cache',
@@ -114,7 +142,7 @@ async function configure(opts, program) {
   conf['cache-max'] = select('cache-max', argv, opts, conf)
   conf['cache-ttl'] = select('cache-ttl', argv, opts, conf)
   conf['dns-announce-interval'] = select('dns-announce-interval', argv, opts, conf)
-  conf['dht-announce-interval'] = select('dhy-announce-interval', argv, opts, conf)
+  conf['dht-announce-interval'] = select('dht-announce-interval', argv, opts, conf)
 
   function select(k, ...args) {
     return coalesce(...args.map(o => o[k]))
@@ -211,7 +239,7 @@ async function start(argv) {
 
   function onlisten() {
     const { port } = server.address()
-    info('identity-resolver: HTTP server listening on port %s', port)
+    info('HTTP server listening on port %s', port)
     announce()
   }
 
@@ -233,7 +261,7 @@ async function start(argv) {
     clearTimeout(announcementTimeout)
     channel.join(conf.discoveryKey, port)
     info(
-      'identity-resolver: Announcing %s on port %s',
+      'Announcing %s on port %s',
       toHex(conf.discoveryKey),
       port
     )
@@ -462,7 +490,7 @@ async function start(argv) {
 async function stop() {
   if (null === server) { return false }
 
-  warn('identity-resolver: Stopping the server!!')
+  warn('Stopping')
   server.close(onclose)
   return true
   function onclose() {
