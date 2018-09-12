@@ -225,7 +225,6 @@ async function start(argv) {
   }
 
   const resolvers = {}
-  const map = {}
 
   const store = await pify(multidrive)(
     toilet(),
@@ -238,7 +237,6 @@ async function start(argv) {
       try {
         const config = Object.assign({}, opts, { id, key, shallow: true })
         const cfs = await createCFS(config)
-        map[id] = cfs
 
         if (!resolvers[opts.id]) {
           const resolver = createSwarm({
@@ -261,7 +259,6 @@ async function start(argv) {
       try {
         await cfs.close()
         done(null)
-        delete map[cfs.identifier.toString('hex')]
       } catch (err) {
         done(err)
       }
@@ -297,12 +294,6 @@ async function start(argv) {
 
   return true
 
-  function onlisten() {
-    const { port } = server.address()
-    info('HTTP server listening on port %s', port)
-    announce()
-  }
-
   function announce() {
     const { port } = server.address()
     clearTimeout(announcementTimeout)
@@ -312,6 +303,26 @@ async function start(argv) {
       toHex(conf.discoveryKey),
       port
     )
+  }
+
+  function createResponse(opts) {
+    return {
+      didDocument: JSON.parse(opts.buffer),
+      didReference: opts.did,
+      methodMetadata: {},
+      resolverMetadata: {
+        retrieved: new Date(),
+        duration: opts.duration,
+        driverId: 'did:ara',
+        driver: 'HttpDriver',
+      }
+    }
+  }
+
+  function onlisten() {
+    const { port } = server.address()
+    info('HTTP server listening on port %s', port)
+    announce()
   }
 
   async function onrequest(req, res) {
@@ -331,7 +342,7 @@ async function start(argv) {
         const response = createResponse({ did, buffer, duration })
         res.set('content-type', 'application/json')
         res.send(response)
-        info('%s: ddo.json (cache)', did.identifier)
+        info('%s: send ddo.json (cache)', did.identifier)
         return
       }
 
@@ -358,19 +369,6 @@ async function start(argv) {
       req.once('close', onclose)
       req.once('end', onclose)
 
-      if (!cfs && cache.has(did.identifier)) {
-        const buffer = cache.get(did.identifier)
-        const duration = Date.now() - now
-        const response = createResponse({ did, buffer, duration })
-
-        cache.set(did.identifier, buffer)
-        res.set('content-type', 'application/json')
-        res.send(response)
-
-        info('%s: ddo.json (cache)', did.identifier)
-        return
-      }
-
       try {
         const timeout = setTimeout(ontimeout, conf.timeout || REQUEST_TIMEOUT)
         const buffer = await cfs.readFile('ddo.json')
@@ -388,9 +386,8 @@ async function start(argv) {
           cache.set(did.identifier, buffer)
           res.set('content-type', 'application/json')
           res.send(response)
+          info('%s: send ddo.json', did.identifier)
         }
-
-        info('%s: ddo.json', did.identifier)
       } catch (err) {
         debug(err)
         internalError()
@@ -398,27 +395,6 @@ async function start(argv) {
     } catch (err) {
       debug(err)
       warn('error:', err.message)
-    }
-
-    function notImplemented() {
-      if (false === closed) {
-        return res.status(503).end()
-      }
-      return null
-    }
-
-    function notFound() {
-      if (false === closed) {
-        return res.status(404).end()
-      }
-      return null
-    }
-
-    function internalError() {
-      if (false === closed) {
-        return res.status(500).end()
-      }
-      return null
     }
 
     function onclose() {
@@ -431,17 +407,21 @@ async function start(argv) {
       notFound()
     }
 
-    function createResponse(opts) {
-      return {
-        didDocument: JSON.parse(opts.buffer),
-        didReference: opts.did,
-        methodMetadata: {},
-        resolverMetadata: {
-          retrieved: new Date(),
-          duration: opts.duration,
-          driverId: 'did:ara',
-          driver: 'HttpDriver',
-        }
+    function notImplemented() {
+      if (false === closed) {
+        res.status(503).end()
+      }
+    }
+
+    function notFound() {
+      if (false === closed) {
+        res.status(404).end()
+      }
+    }
+
+    function internalError() {
+      if (false === closed) {
+        res.status(500).end()
       }
     }
   }
