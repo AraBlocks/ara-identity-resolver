@@ -22,7 +22,7 @@ const rc = require('./rc')()
 const ss = require('ara-secret-storage')
 
 // in milliseconds
-const REQUEST_TIMEOUT = 200
+const REQUEST_TIMEOUT = 1000
 const UPDATE_INTERVAL = 2 * 60 * 1000
 
 const conf = {
@@ -33,6 +33,8 @@ const conf = {
   'cache-max': Infinity,
   // in milliseconds
   'cache-ttl': 5 * 1000,
+  // in milliseconds
+  timeout: REQUEST_TIMEOUT,
   port: rc.network.identity.resolver.http.port,
 }
 
@@ -93,15 +95,21 @@ prompted for the associated passphrase`,
       })
 
     program.group([
-      'port', 'cache-max', 'cache-ttl',
+      'port', 'timeout', 'cache-max', 'cache-ttl',
       'dns-announce-interval', 'dht-announce-interval'
     ], 'Server Options:')
       .option('port', {
+        type: 'number',
         alias: 'p',
+        default: rc.network.identity.resolver.http.port,
         describe: 'Port for network node to listen on.',
-        default: rc.network.identity.resolver.http.port
       })
-
+      .option('timeout', {
+        type: 'number',
+        default: conf.timeout,
+        describe: 'Request timeout (in milliseconds)',
+        requiresArg: true,
+      })
       .option('cache-max', {
         type: 'number',
         describe: 'Max entries in cache',
@@ -167,6 +175,7 @@ async function start(argv) {
       'Please enter the passphrase associated with the node identity.\n' +
       'Passphrase:'
     } ])
+
     // eslint-disable-next-line
     password = res.password
   }
@@ -221,6 +230,8 @@ async function start(argv) {
       const id = Buffer.from(opts.id, 'hex').toString('hex')
       const key = Buffer.from(opts.key, 'hex')
 
+      info('create cfs:', id)
+
       try {
         const config = Object.assign({}, opts, { id, key, shallow: true })
         const cfs = await createCFS(config)
@@ -269,7 +280,7 @@ async function start(argv) {
     dns: { interval: conf['dns-announce-interval'] },
   })
 
-  app.get('/1.0/identifiers/*?', onidentifier)
+  app.get('/1.0/identifiers/*?', onrequest)
 
   server.listen(argv.port, onlisten)
   server.once('error', (err) => {
@@ -299,7 +310,7 @@ async function start(argv) {
     )
   }
 
-  async function onidentifier(req, res) {
+  async function onrequest(req, res) {
     let didTimeout = false
     let closed = false
     let did = null
@@ -308,7 +319,7 @@ async function start(argv) {
 
     try {
       did = parseDID(req.params[0])
-      debug('onidentifier:', did.reference)
+      debug('onrequest:', did.reference)
 
       if (cache.has(did.reference)) {
         const buffer = cache.get(did.reference)
@@ -357,7 +368,7 @@ async function start(argv) {
       }
 
       try {
-        const timeout = setTimeout(ontimeout, REQUEST_TIMEOUT)
+        const timeout = setTimeout(ontimeout, conf.timeout || REQUEST_TIMEOUT)
         const buffer = await cfs.readFile('ddo.json')
 
         clearTimeout(timeout)
@@ -411,6 +422,7 @@ async function start(argv) {
     }
 
     async function ontimeout() {
+      warn('request did timeout for', did.reference)
       didTimeout = true
       notFound()
     }
