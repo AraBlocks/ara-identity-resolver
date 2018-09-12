@@ -359,8 +359,7 @@ async function start(argv) {
       cfs.download('ddo.json').catch(debug)
 
       cfs.discovery = createSwarm({
-        stream: () => cfs.replicate(),
-        utp: false
+        stream: () => cfs.replicate()
       })
 
       cfs.discovery.once('connection', () => setTimeout(onexpire, ttl))
