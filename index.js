@@ -5,11 +5,13 @@ const { info, warn } = require('ara-console')('identity-resolver')
 const { createCFS } = require('cfsnet/create')
 const { readFile } = require('fs')
 const { resolve } = require('path')
+const multidrive = require('multidrive')
 const inquirer = require('inquirer')
 const coalesce = require('defined')
 const { DID } = require('did-uri')
 const express = require('express')
 const crypto = require('ara-crypto')
+const toilet = require('toiletdb/inmemory')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('http')
 const pify = require('pify')
@@ -150,14 +152,7 @@ prompted for the associated passphrase`,
 }
 
 async function start(argv) {
-  const lookup = {}
   const cache = lru({
-    dispose,
-    maxAge: 2 * conf['cache-ttl'],
-    max: 2 * conf['cache-max'],
-  })
-
-  const routeCache = lru({
     maxAge: conf['cache-ttl'],
     max: conf['cache-max'],
   })
@@ -217,6 +212,54 @@ async function start(argv) {
     }
   }
 
+  const resolvers = {}
+  const map = {}
+
+  const store = await pify(multidrive)(
+    toilet(),
+    async (opts, done) => {
+      const id = Buffer.from(opts.id, 'hex').toString('hex')
+      const key = Buffer.from(opts.key, 'hex')
+
+      try {
+        const config = Object.assign({}, opts, { id, key, shallow: true })
+        const cfs = await createCFS(config)
+        map[id] = cfs
+
+        if (!resolvers[opts.id]) {
+          const resolver = createSwarm({
+            stream: () => cfs.replicate({ live: false })
+          })
+
+          resolvers[opts.id] = resolver
+          resolver.setMaxListeners(Infinity)
+        }
+
+        setTimeout(() => {
+          const resolver = resolvers[opts.id]
+          if (resolver) {
+            info('join:', cfs.discoveryKey.toString('hex'))
+            resolver.join(cfs.discoveryKey, { announce: true })
+          }
+        }, 1000)
+
+        done(null, cfs)
+      } catch (err) {
+        done(err)
+      }
+    },
+
+    async (cfs, done) => {
+      try {
+        await cfs.close()
+        done(null)
+        delete map[cfs.identifier.toString('hex')]
+      } catch (err) {
+        done(err)
+      }
+    }
+  )
+
   const announcementTimeout = setTimeout(announce, 1000)
 
   app = express()
@@ -245,19 +288,6 @@ async function start(argv) {
     announce()
   }
 
-  function dispose(key, cfs) {
-    if (key && cfs) {
-      delete lookup[toHex(cfs.key)]
-      warn('Disposing of %s', key)
-
-      if (cfs.discovery) {
-        cfs.discovery.destroy()
-      }
-
-      cfs.close()
-    }
-  }
-
   function announce() {
     const { port } = server.address()
     clearTimeout(announcementTimeout)
@@ -267,39 +297,6 @@ async function start(argv) {
       toHex(conf.discoveryKey),
       port
     )
-  }
-
-  function put(did, cfs) {
-    if (did && did.identifier && cfs && cfs.discoveryKey) {
-      cache.set(toHex(crypto.blake2b(cfs.key)), cfs)
-      lookup[did.identifier] = cfs
-    }
-  }
-
-  function del(did, cfs) {
-    if (did && did.identifier) {
-      delete lookup[did.identifier]
-    }
-
-    if (cfs && cfs.discoveryKey) {
-      cache.del(toHex(crypto.blake2b(cfs.key)))
-    }
-  }
-
-  function get(did) {
-    const cfs = did && did.identifier ? lookup[did.identifier] : null
-
-    if (cfs) {
-      return cache.get(toHex(crypto.blake2b(cfs.key)))
-    }
-
-    return null
-  }
-
-  function has(did) {
-    const key = did && did.identifier
-    const dkey = key && crypto.blake2b(Buffer.from(key, 'hex'))
-    return Boolean(key && (key in lookup) && cache.peek(toHex(dkey)))
   }
 
   async function onidentifier(req, res) {
@@ -313,8 +310,8 @@ async function start(argv) {
       did = parseDID(req.params[0])
       debug('onidentifier:', did.reference)
 
-      if (routeCache.has(did.reference)) {
-        const buffer = routeCache.get(did.reference)
+      if (cache.has(did.reference)) {
+        const buffer = cache.get(did.reference)
         const duration = Date.now() - now
         const response = createResponse({ did, buffer, duration })
         res.set('content-type', 'application/json')
@@ -329,53 +326,59 @@ async function start(argv) {
         return
       }
 
-      if (has(did)) {
-        await onconnection()
-        return
-      }
-
       const key = Buffer.from(did.identifier, 'hex')
       const id = toHex(key)
 
-      // stub
-      put(did, { id, key })
-
-      // @TODO(jwerle): Cache on disk, instead of always using RAM in ms
-      const ttl = 1000 * 60
-      const cfs = await createCFS({
-        key,
-        id,
+      const cfs = await pify(store.create)({
         sparseMetadata: true,
         shallow: true,
-        // @TODO(jwerle): Figure out an on-disk cache
         storage: ram,
         sparse: true,
+        key,
+        id,
       })
-
-      const timeout = setTimeout(ontimeout, REQUEST_TIMEOUT)
-
-      put(did, cfs)
 
       cfs.download('ddo.json').catch(debug)
-
-      cfs.discovery = createSwarm({
-        stream: () => cfs.replicate()
-      })
-
-      cfs.discovery.once('connection', () => setTimeout(onexpire, ttl))
-      cfs.discovery.once('connection', () => clearTimeout(timeout))
-      cfs.discovery.once('connection', onconnection)
-      cfs.discovery.join(cfs.discoveryKey)
 
       req.once('close', onclose)
       req.once('end', onclose)
 
-      async function onexpire() {
-        if (false === closed) {
-          setTimeout(onexpire, ttl)
-        } else {
-          del(did, get(did))
+      if (!cfs && cache.has(did.reference)) {
+        const buffer = cache.get(did.reference)
+        const duration = Date.now() - now
+        const response = createResponse({ did, buffer, duration })
+
+        cache.set(did.reference, buffer)
+        res.set('content-type', 'application/json')
+        res.send(response)
+
+        info('%s: ddo.json (cache)', did.identifier)
+        return
+      }
+
+      try {
+        const timeout = setTimeout(ontimeout, REQUEST_TIMEOUT)
+        const buffer = await cfs.readFile('ddo.json')
+
+        clearTimeout(timeout)
+
+        if (didTimeout) {
+          return
         }
+
+        const duration = Date.now() - now
+
+        if (false === closed) {
+          const response = createResponse({ did, buffer, duration })
+          cache.set(did.reference, buffer)
+          res.set('content-type', 'application/json')
+          res.send(response)
+        }
+
+        info('%s: ddo.json', did.identifier)
+      } catch (err) {
+        debug(err)
+        internalError()
       }
     } catch (err) {
       debug(err)
@@ -403,73 +406,13 @@ async function start(argv) {
       return null
     }
 
-    async function onconnection() {
-      info('%s: onconnection', did.identifier)
-
-      if (false === has(did)) {
-        notFound()
-        return
-      }
-
-      const cfs = get(did)
-
-      if (!cfs && routeCache.has(did.reference)) {
-        const buffer = routeCache.get(did.reference)
-        const duration = Date.now() - now
-        const response = createResponse({ did, buffer, duration })
-
-        routeCache.set(did.reference, buffer)
-        res.set('content-type', 'application/json')
-        res.send(response)
-
-        info('%s: ddo.json (cache)', did.identifier)
-        return
-      }
-
-      try {
-        const timeout = setTimeout(ontimeout, REQUEST_TIMEOUT)
-        const buffer = await cfs.readFile('ddo.json')
-
-        clearTimeout(timeout)
-
-        if (didTimeout) {
-          return
-        }
-
-        const duration = Date.now() - now
-
-        if (false === closed) {
-          const response = createResponse({ did, buffer, duration })
-          routeCache.set(did.reference, buffer)
-          res.set('content-type', 'application/json')
-          res.send(response)
-        }
-
-        info('%s: ddo.json', did.identifier)
-      } catch (err) {
-        debug(err)
-        internalError()
-      } finally {
-        onclose()
-      }
+    function onclose() {
+      closed = true
     }
 
     async function ontimeout() {
       didTimeout = true
-      del(did, get(did))
-      onclose()
-      return notFound()
-    }
-
-    async function onclose() {
-      if (false === closed) {
-        closed = true
-        const cfs = get(did)
-        if (cfs && cfs.discovery) {
-          cfs.discovery.destroy()
-          cfs.discovery = null
-        }
-      }
+      notFound()
     }
 
     function createResponse(opts) {
