@@ -292,7 +292,14 @@ async function start(argv) {
     }
   })
 
-  setInterval(() => channel.update(), UPDATE_INTERVAL)
+  setInterval(() => {
+    try {
+      channel.update()
+    } catch (err) {
+      debug(err)
+      warn('Failed to update channel')
+    }
+  }, UPDATE_INTERVAL)
 
   return true
 
