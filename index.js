@@ -163,7 +163,7 @@ async function start(argv) {
   const cache = lru({
     maxAge: conf['cache-ttl'],
     max: conf['cache-max'],
-    async dipose(key) {
+    async dispose(key) {
       await pify(store.close)(key)
     }
   })
