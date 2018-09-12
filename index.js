@@ -22,7 +22,7 @@ const rc = require('./rc')()
 const ss = require('ara-secret-storage')
 
 // in milliseconds
-const REQUEST_TIMEOUT = 1000
+const REQUEST_TIMEOUT = 5 * 1000
 const UPDATE_INTERVAL = 2 * 60 * 1000
 
 const conf = {
