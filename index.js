@@ -247,15 +247,9 @@ async function start(argv) {
 
           resolvers[opts.id] = resolver
           resolver.setMaxListeners(Infinity)
+          resolver.join(cfs.discoveryKey)
+          info('join:', cfs.discoveryKey.toString('hex'))
         }
-
-        setTimeout(() => {
-          const resolver = resolvers[opts.id]
-          if (resolver) {
-            info('join:', cfs.discoveryKey.toString('hex'))
-            resolver.join(cfs.discoveryKey, { announce: true })
-          }
-        }, 1000)
 
         done(null, cfs)
       } catch (err) {
