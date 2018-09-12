@@ -163,6 +163,9 @@ async function start(argv) {
   const cache = lru({
     maxAge: conf['cache-ttl'],
     max: conf['cache-max'],
+    async dipose(key) {
+      await pify(store.close)(key)
+    }
   })
 
   let { password } = argv
@@ -321,8 +324,8 @@ async function start(argv) {
       did = parseDID(req.params[0])
       debug('onrequest:', did.reference)
 
-      if (cache.has(did.reference)) {
-        const buffer = cache.get(did.reference)
+      if (cache.has(did.identifier)) {
+        const buffer = cache.get(did.identifier)
         const duration = Date.now() - now
         const response = createResponse({ did, buffer, duration })
         res.set('content-type', 'application/json')
@@ -354,12 +357,12 @@ async function start(argv) {
       req.once('close', onclose)
       req.once('end', onclose)
 
-      if (!cfs && cache.has(did.reference)) {
-        const buffer = cache.get(did.reference)
+      if (!cfs && cache.has(did.identifier)) {
+        const buffer = cache.get(did.identifier)
         const duration = Date.now() - now
         const response = createResponse({ did, buffer, duration })
 
-        cache.set(did.reference, buffer)
+        cache.set(did.identifier, buffer)
         res.set('content-type', 'application/json')
         res.send(response)
 
@@ -381,7 +384,7 @@ async function start(argv) {
 
         if (false === closed) {
           const response = createResponse({ did, buffer, duration })
-          cache.set(did.reference, buffer)
+          cache.set(did.identifier, buffer)
           res.set('content-type', 'application/json')
           res.send(response)
         }
