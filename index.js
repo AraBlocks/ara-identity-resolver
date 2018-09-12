@@ -20,18 +20,18 @@ const rc = require('./rc')()
 const ss = require('ara-secret-storage')
 
 // in milliseconds
-const kRequestTimeout = 200
+const REQUEST_TIMEOUT = 200
+const UPDATE_INTERVAL = 2 * 60 * 1000
 
 const conf = {
   // in milliseconds
-  'dns-announce-interval': 1000 * 60 * 2,
+  'dns-announce-interval': 2 * 60 * 1000,
   // in milliseconds
-  'dht-announce-interval': 1000 * 60 * 2,
+  'dht-announce-interval': 2 * 60 * 1000,
   'cache-max': Infinity,
   // in milliseconds
-  'cache-ttl': 1000 * 5,
+  'cache-ttl': 5 * 1000,
   port: rc.network.identity.resolver.http.port,
-  key: null,
 }
 
 let app = null
@@ -217,14 +217,14 @@ async function start(argv) {
     }
   }
 
+  const announcementTimeout = setTimeout(announce, 1000)
+
   app = express()
   server = http.createServer(app)
   channel = createChannel({
     dht: { interval: conf['dht-announce-interval'] },
     dns: { interval: conf['dns-announce-interval'] },
   })
-
-  const announcementTimeout = setTimeout(announce, 1000)
 
   app.get('/1.0/identifiers/*?', onidentifier)
 
@@ -234,6 +234,8 @@ async function start(argv) {
       server.listen(0, onlisten)
     }
   })
+
+  setInterval(() => channel.update(), UPDATE_INTERVAL)
 
   return true
 
@@ -350,7 +352,7 @@ async function start(argv) {
         sparse: true,
       })
 
-      const timeout = setTimeout(ontimeout, kRequestTimeout)
+      const timeout = setTimeout(ontimeout, REQUEST_TIMEOUT)
 
       put(did, cfs)
 
@@ -426,7 +428,7 @@ async function start(argv) {
       }
 
       try {
-        const timeout = setTimeout(ontimeout, kRequestTimeout)
+        const timeout = setTimeout(ontimeout, REQUEST_TIMEOUT)
         const buffer = await cfs.readFile('ddo.json')
 
         clearTimeout(timeout)
