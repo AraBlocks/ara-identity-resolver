@@ -33,16 +33,18 @@
     "debug": "^3.1.0",
     "defined": "^1.0.0",
     "did-uri": "^0.2.4",
-    "express": "^4.16.3",
     "extend": "^3.0.1",
     "inquirer": "^6.1.0",
+    "jitson": "^1.0.0",
     "lru-cache": "^4.1.3",
     "multidrive": "^5.2.0",
+    "path-to-regexp": "^2.4.0",
     "pify": "^3.0.0",
     "pump": "^3.0.0",
     "random-access-memory": "^3.0.0",
     "through2": "^2.0.3",
-    "toiletdb": "^1.4.1"
+    "toiletdb": "^1.4.1",
+    "turbo-http": "^0.3.0"
   },
   "devDependencies": {
     "ava": "^0.25.0",
