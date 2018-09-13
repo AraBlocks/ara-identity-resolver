@@ -6,24 +6,26 @@ const { createCFS } = require('cfsnet/create')
 const { readFile } = require('fs')
 const { resolve } = require('path')
 const multidrive = require('multidrive')
+const toRegExp = require('path-to-regexp')
 const inquirer = require('inquirer')
 const coalesce = require('defined')
 const { DID } = require('did-uri')
-const express = require('express')
 const crypto = require('ara-crypto')
+const jitson = require('jitson')
 const toilet = require('toiletdb/inmemory')
 const debug = require('debug')('ara:network:node:identity-resolver')
-const http = require('http')
+const http = require('turbo-http')
 const pify = require('pify')
 const pkg = require('./package.json')
 const ram = require('random-access-memory')
 const lru = require('lru-cache')
+const url = require('url')
 const rc = require('./rc')()
 const ss = require('ara-secret-storage')
 
 // in milliseconds
 const REQUEST_TIMEOUT = 5 * 1000
-const UPDATE_INTERVAL = 2 * 60 * 1000
+const IDENTIFIERS_ROUTE_1_0 = toRegExp('/1.0/identifiers/:did')
 
 const conf = {
   // in milliseconds
@@ -38,9 +40,13 @@ const conf = {
   port: rc.network.identity.resolver.http.port,
 }
 
-let app = null
 let server = null
 let channel = null
+
+const json = {
+  keystore: { parse: jitson({ sampleInterval: 1 }) },
+  didDocument: { parse: jitson({ sampleInterval: 1 }) },
+}
 
 function toHex(b) {
   return b.toString('hex')
@@ -195,7 +201,6 @@ async function start(argv) {
   // back to an authenticated decode with the identity associated
   // with this network node
   try {
-    debug('')
     const secret = Buffer.from(conf.secret)
     const keyring = keyRing(conf.keyring, { secret })
 
@@ -209,7 +214,7 @@ async function start(argv) {
 
     try {
       const key = password.slice(0, 16)
-      const keystore = JSON.parse(await pify(readFile)(path, 'utf8'))
+      const keystore = json.keystore.parse(await pify(readFile)(path, 'utf8'))
       const secretKey = ss.decrypt(keystore, { key })
       const keyring = keyRing(conf.keyring, { secret: secretKey })
 
@@ -267,14 +272,11 @@ async function start(argv) {
 
   const announcementTimeout = setTimeout(announce, 1000)
 
-  app = express()
-  server = http.createServer(app)
+  server = http.createServer(onrequest)
   channel = createChannel({
     dht: { interval: conf['dht-announce-interval'] },
     dns: { interval: conf['dns-announce-interval'] },
   })
-
-  app.get('/1.0/identifiers/*?', onrequest)
 
   server.listen(argv.port, onlisten)
   server.once('error', (err) => {
@@ -282,15 +284,6 @@ async function start(argv) {
       server.listen(0, onlisten)
     }
   })
-
-  setInterval(() => {
-    try {
-      channel.update()
-    } catch (err) {
-      debug(err)
-      warn('Failed to update channel')
-    }
-  }, UPDATE_INTERVAL)
 
   return true
 
@@ -306,8 +299,8 @@ async function start(argv) {
   }
 
   function createResponse(opts) {
-    return {
-      didDocument: JSON.parse(opts.buffer),
+    return JSON.stringify({
+      didDocument: json.didDocument.parse(opts.buffer),
       didReference: opts.did,
       methodMetadata: {},
       resolverMetadata: {
@@ -316,7 +309,7 @@ async function start(argv) {
         driverId: 'did:ara',
         driver: 'HttpDriver',
       }
-    }
+    })
   }
 
   function onlisten() {
@@ -326,9 +319,30 @@ async function start(argv) {
   }
 
   async function onrequest(req, res) {
+    debug('onrequest:', req.method, req.url)
+
     let didTimeout = false
     let closed = false
     let did = null
+
+    if ('GET' !== req.method.toUpperCase()) {
+      notFound()
+      return
+    }
+
+    try {
+      const uri = url.parse(req.url)
+      req.params = IDENTIFIERS_ROUTE_1_0.exec(uri.pathname).slice(1)
+    } catch (err) {
+      debug(err)
+      internalError()
+      return
+    }
+
+    if (!req.params || 0 === req.params.length) {
+      notFound()
+      return
+    }
 
     const now = Date.now()
 
@@ -340,9 +354,14 @@ async function start(argv) {
         const buffer = cache.get(did.identifier)
         const duration = Date.now() - now
         const response = createResponse({ did, buffer, duration })
-        res.set('content-type', 'application/json')
-        res.send(response)
-        info('%s: send ddo.json (cache)', did.identifier)
+        res.setHeader('content-type', 'application/json')
+        res.end(response, response.length, (err) => {
+          if (err) {
+            debug(err)
+          } else {
+            info('%s: send ddo.json (cache)', did.identifier)
+          }
+        })
         return
       }
 
@@ -366,8 +385,8 @@ async function start(argv) {
 
       cfs.download('ddo.json').catch(debug)
 
-      req.once('close', onclose)
-      req.once('end', onclose)
+      req.socket.on('close', onclose)
+      req.socket.on('end', onclose)
 
       try {
         const timeout = setTimeout(ontimeout, conf.timeout || REQUEST_TIMEOUT)
@@ -384,8 +403,14 @@ async function start(argv) {
         if (false === closed) {
           const response = createResponse({ did, buffer, duration })
           cache.set(did.identifier, buffer)
-          res.set('content-type', 'application/json')
-          res.send(response)
+          res.setHeader('content-type', 'application/json')
+          res.end(response, response.length, (err) => {
+            if (err) {
+              debug(err)
+            } else {
+              info('%s: send ddo.json (cache)', did.identifier)
+            }
+          })
           info('%s: send ddo.json', did.identifier)
         }
       } catch (err) {
@@ -409,19 +434,22 @@ async function start(argv) {
 
     function notImplemented() {
       if (false === closed) {
-        res.status(503).end()
+        res.statusCode = 503
+        res.end()
       }
     }
 
     function notFound() {
       if (false === closed) {
-        res.status(404).end()
+        res.statusCode = 404
+        res.end()
       }
     }
 
     function internalError() {
       if (false === closed) {
-        res.status(500).end()
+        res.statusCode = 500
+        res.end()
       }
     }
   }
