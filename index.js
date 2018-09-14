@@ -2,23 +2,19 @@ const { createSwarm, createChannel } = require('ara-network/discovery')
 const { parse: parseDID } = require('did-uri')
 const { unpack, keyRing } = require('ara-network/keys')
 const { info, warn } = require('ara-console')('identity-resolver')
-const { createCFS } = require('cfsnet/create')
-const { readFile } = require('fs')
 const { resolve } = require('path')
-const multidrive = require('multidrive')
 const toRegExp = require('path-to-regexp')
 const inquirer = require('inquirer')
 const coalesce = require('defined')
 const { DID } = require('did-uri')
+const hyperdb = require('hyperdb')
 const crypto = require('ara-crypto')
 const jitson = require('jitson')
-const toilet = require('toiletdb/inmemory')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('turbo-http')
 const pify = require('pify')
+const aid = require('ara-identity')
 const pkg = require('./package.json')
-const ram = require('random-access-memory')
-const lru = require('lru-cache')
 const url = require('url')
 const rc = require('./rc')()
 const ss = require('ara-secret-storage')
@@ -32,14 +28,18 @@ const conf = {
   'dns-announce-interval': 2 * 60 * 1000,
   // in milliseconds
   'dht-announce-interval': 2 * 60 * 1000,
-  'cache-max': Infinity,
   // in milliseconds
-  'cache-ttl': 5 * 1000,
+  'cache-ttl': 10 * 1000,
+  // path to cache data directory
+  'cache-root': rc.network.identity.resolver.cache.data.root,
+  // an array of public keys for hyperdb cache nodes
+  'cache-nodes': rc.network.identity.resolver.cache.nodes || [],
   // in milliseconds
   timeout: REQUEST_TIMEOUT,
   port: rc.network.identity.resolver.http.port,
 }
 
+let cache = null
 let server = null
 let channel = null
 
@@ -101,13 +101,14 @@ prompted for the associated passphrase`,
       })
 
     program.group([
-      'port', 'timeout', 'cache-max', 'cache-ttl',
+      'port', 'timeout',
+      'cache-ttl', 'cache-root', 'cache-node',
       'dns-announce-interval', 'dht-announce-interval'
     ], 'Server Options:')
       .option('port', {
         type: 'number',
         alias: 'p',
-        default: rc.network.identity.resolver.http.port,
+        default: conf.port,
         describe: 'Port for network node to listen on.',
       })
       .option('timeout', {
@@ -116,15 +117,22 @@ prompted for the associated passphrase`,
         describe: 'Request timeout (in milliseconds)',
         requiresArg: true,
       })
-      .option('cache-max', {
-        type: 'number',
-        describe: 'Max entries in cache',
-        default: conf['cache-max']
-      })
       .option('cache-ttl', {
         type: 'number',
         describe: 'Max age for entries in cache',
         default: conf['cache-ttl']
+      })
+      .option('cache-root', {
+        type: 'string',
+        default: conf['cache-root'],
+        describe: 'Path to cache data root',
+        requiresArg: true,
+      })
+      .option('cache-node', {
+        type: 'string',
+        default: conf['cache-nodes'],
+        describe: 'Another resolver node public key to share cache with',
+        requiresArg: true,
       })
       .option('dns-announce-interval', {
         type: 'number',
@@ -157,8 +165,17 @@ prompted for the associated passphrase`,
 
   conf['cache-max'] = select('cache-max', argv, opts, conf)
   conf['cache-ttl'] = select('cache-ttl', argv, opts, conf)
+  conf['cache-root'] = select('cache-root', argv, opts, conf)
   conf['dns-announce-interval'] = select('dns-announce-interval', argv, opts, conf)
   conf['dht-announce-interval'] = select('dht-announce-interval', argv, opts, conf)
+
+  const nodes = select('cache-node', argv, opts, conf)
+
+  if (Array.isArray(nodes)) {
+    conf['cache-nodes'] = nodes
+  } else if (nodes) {
+    conf['cache-nodes'] = [ nodes ]
+  }
 
   function select(k, ...args) {
     return coalesce(...args.map(o => o[k]))
@@ -166,14 +183,6 @@ prompted for the associated passphrase`,
 }
 
 async function start(argv) {
-  const cache = lru({
-    maxAge: conf['cache-ttl'],
-    max: conf['cache-max'],
-    async dispose(key) {
-      await pify(store.close)(key)
-    }
-  })
-
   let { password } = argv
 
   if (!password) {
@@ -190,19 +199,19 @@ async function start(argv) {
   }
 
   const { identifier } = new DID(conf.identity)
-  const publicKey = Buffer.from(identifier, 'hex')
+
+  let secretKey = null
+  let publicKey = null
+  let keyring = null
 
   password = crypto.blake2b(Buffer.from(password))
-
-  const hash = toHex(crypto.blake2b(publicKey))
-  const path = resolve(rc.network.identity.root, hash, 'keystore/ara')
 
   // attempt to decode keyring with a supplied secret falling
   // back to an authenticated decode with the identity associated
   // with this network node
   try {
     const secret = Buffer.from(conf.secret)
-    const keyring = keyRing(conf.keyring, { secret })
+    keyring = keyRing(conf.keyring, { secret })
 
     await keyring.ready()
 
@@ -214,61 +223,21 @@ async function start(argv) {
 
     try {
       const key = password.slice(0, 16)
-      const keystore = json.keystore.parse(await pify(readFile)(path, 'utf8'))
-      const secretKey = ss.decrypt(keystore, { key })
-      const keyring = keyRing(conf.keyring, { secret: secretKey })
+      const keystore = json.keystore.parse(await aid.fs.readFile(conf.identity, 'keystore/ara'))
+
+      publicKey = Buffer.from(identifier, 'hex')
+      secretKey = ss.decrypt(keystore, { key })
+      keyring = keyRing(conf.keyring, { secret: secretKey })
 
       await keyring.ready()
 
       const buffer = await keyring.get(conf.network)
-      const unpacked = unpack({ buffer })
-      Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
+      Object.assign(conf, unpack({ buffer }))
     } catch (err) { // eslint-disable-line no-shadow
       debug(err)
       throw new Error('Unable to decode keys in keyring for identity.')
     }
   }
-
-  const resolvers = {}
-
-  const store = await pify(multidrive)(
-    toilet(),
-    async (opts, done) => {
-      const id = Buffer.from(opts.id, 'hex').toString('hex')
-      const key = Buffer.from(opts.key, 'hex')
-
-      info('create cfs:', id)
-
-      try {
-        const config = Object.assign({}, opts, { id, key, shallow: true })
-        const cfs = await createCFS(config)
-
-        if (!resolvers[opts.id]) {
-          const resolver = createSwarm({
-            stream: () => cfs.replicate({ live: false })
-          })
-
-          resolvers[opts.id] = resolver
-          resolver.setMaxListeners(Infinity)
-          resolver.join(cfs.discoveryKey)
-          info('join:', cfs.discoveryKey.toString('hex'))
-        }
-
-        done(null, cfs)
-      } catch (err) {
-        done(err)
-      }
-    },
-
-    async (cfs, done) => {
-      try {
-        await cfs.close()
-        done(null)
-      } catch (err) {
-        done(err)
-      }
-    }
-  )
 
   const announcementTimeout = setTimeout(announce, 1000)
 
@@ -285,7 +254,75 @@ async function start(argv) {
     }
   })
 
+  cache = hyperdb(resolve(conf['cache-root'], identifier), publicKey, {
+    // dont store secretKey on disk
+    storeSecretKey: false,
+    // set to true to reduce the nodes array to the first node in it
+    firstNode: true,
+    secretKey,
+  })
+
+  await new Promise((done, onerror) => {
+    cache.once('ready', done).once('error', onerror)
+  })
+
+  cache.swarm = createSwarm({
+    stream: () => cache.replicate({ live: true })
+  })
+
+  await put(toHex(crypto.blake2b(publicKey)), publicKey)
+  cache.swarm.join(crypto.blake2b(publicKey))
+
+  for (const k of conf['cache-nodes']) {
+    try {
+      const { identifier: key } = new DID(aid.did.normalize(k))
+
+      if (64 !== key.length) {
+        throw new Error('Invalid key length for cache node.')
+      }
+
+      warn('cache: node: join:', key)
+      cache.swarm.join(crypto.blake2b(Buffer.from(key, 'hex')))
+    } catch (err) {
+      debug(err)
+      warn('cache: node: join: error:', err.message)
+    }
+  }
+
   return true
+
+  async function get(key) {
+    const entry = await pify(cache.get.bind(cache))(key)
+    if (entry && entry.value) {
+      const timestamp = crypto.uint64.decode(entry.value)
+      const buffer = entry.value.slice(8)
+      const now = Date.now()
+
+      if (now - timestamp < conf['cache-ttl']) {
+        return buffer
+      }
+
+      await del(key)
+    }
+
+    return null
+  }
+
+  async function put(key, buffer) {
+    const timestamp = Date.now()
+    const entry = Buffer.concat([
+      crypto.uint64.encode(timestamp),
+      buffer
+    ])
+
+    warn('cache: put:', timestamp, key)
+    return pify(cache.put.bind(cache))(key, entry)
+  }
+
+  async function del(key) {
+    warn('cache: del:', Date.now(), key)
+    return pify(cache.del.bind(cache))(key)
+  }
 
   function announce() {
     const { port } = server.address()
@@ -335,7 +372,7 @@ async function start(argv) {
       req.params = IDENTIFIERS_ROUTE_1_0.exec(uri.pathname).slice(1)
     } catch (err) {
       debug(err)
-      internalError()
+      notFound()
       return
     }
 
@@ -348,10 +385,11 @@ async function start(argv) {
 
     try {
       did = parseDID(req.params[0])
-      debug('onrequest:', did.reference)
+      debug('ondid:', did.reference)
+      const entry = await get(did.identifier)
 
-      if (cache.has(did.identifier)) {
-        const buffer = cache.get(did.identifier)
+      if (entry) {
+        const buffer = entry
         const duration = Date.now() - now
         const response = createResponse({ did, buffer, duration })
         res.setHeader('content-type', 'application/json')
@@ -371,26 +409,12 @@ async function start(argv) {
         return
       }
 
-      const key = Buffer.from(did.identifier, 'hex')
-      const id = toHex(key)
-
-      const cfs = await pify(store.create)({
-        sparseMetadata: true,
-        shallow: true,
-        storage: ram,
-        sparse: true,
-        key,
-        id,
-      })
-
-      cfs.download('ddo.json').catch(debug)
-
       req.socket.on('close', onclose)
       req.socket.on('end', onclose)
 
       try {
         const timeout = setTimeout(ontimeout, conf.timeout || REQUEST_TIMEOUT)
-        const buffer = await cfs.readFile('ddo.json')
+        const buffer = await aid.fs.readFile(did.identifier, 'ddo.json')
 
         clearTimeout(timeout)
 
@@ -402,7 +426,10 @@ async function start(argv) {
 
         if (false === closed) {
           const response = createResponse({ did, buffer, duration })
-          cache.set(did.identifier, buffer)
+          await put(did.identifier, buffer)
+
+          setTimeout(onexpire, conf['cache-ttl'])
+
           res.setHeader('content-type', 'application/json')
           res.end(response, response.length, (err) => {
             if (err) {
@@ -420,6 +447,10 @@ async function start(argv) {
     } catch (err) {
       debug(err)
       warn('error:', err.message)
+    }
+
+    async function onexpire() {
+      await del(did.identifier)
     }
 
     function onclose() {
