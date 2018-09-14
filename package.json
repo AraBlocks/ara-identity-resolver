@@ -34,6 +34,7 @@
     "defined": "^1.0.0",
     "did-uri": "^0.2.4",
     "extend": "^3.0.1",
+    "hyperdb": "^3.5.0",
     "inquirer": "^6.1.0",
     "jitson": "^1.0.0",
     "lru-cache": "^4.1.3",
