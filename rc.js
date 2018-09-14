@@ -12,6 +12,7 @@ const defaults = () => ({
         },
 
         cache: {
+          nodes: [],
           data: {
             root: resolve(rc().data.root, 'identities', 'cache')
           }
