@@ -1,4 +1,5 @@
 /* eslint-disable global-require */
+const { resolve } = require('path')
 const extend = require('extend')
 const rc = require('ara-runtime-configuration')
 
@@ -8,6 +9,12 @@ const defaults = () => ({
       resolver: {
         http: {
           port: 8000
+        },
+
+        cache: {
+          data: {
+            root: resolve(rc().data.root, 'identities', 'cache')
+          }
         }
       }
     }
