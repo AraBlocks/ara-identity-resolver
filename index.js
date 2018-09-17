@@ -297,12 +297,14 @@ async function start(argv) {
       const timestamp = crypto.uint64.decode(entry.value)
       const buffer = entry.value.slice(8)
       const now = Date.now()
+      return buffer
 
+      /*
       if (now - timestamp < conf['cache-ttl']) {
         return buffer
-      }
+      }*/
 
-      await del(key)
+      //await del(key)
     }
 
     return null
