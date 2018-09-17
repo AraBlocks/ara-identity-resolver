@@ -430,7 +430,7 @@ async function start(argv) {
           const response = createResponse({ did, buffer, duration })
           await put(did.identifier, buffer)
 
-          setTimeout(onexpire, conf['cache-ttl'])
+          //setTimeout(onexpire, conf['cache-ttl'])
 
           res.setHeader('content-type', 'application/json')
           res.end(response, response.length, (err) => {
