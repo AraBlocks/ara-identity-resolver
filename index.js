@@ -223,7 +223,10 @@ async function start(argv) {
 
     try {
       const key = password.slice(0, 16)
-      const keystore = json.keystore.parse(await aid.fs.readFile(conf.identity, 'keystore/ara'))
+      const keystore = json.keystore.parse(await aid.fs.readFile(
+        conf.identity,
+        'keystore/ara'
+      ))
 
       publicKey = Buffer.from(identifier, 'hex')
       secretKey = ss.decrypt(keystore, { key })
@@ -267,7 +270,13 @@ async function start(argv) {
   })
 
   cache.swarm = createSwarm({
-    stream: () => cache.replicate({ live: true })
+    stream(peer) {
+      warn(
+        'cache: node: replicate: channel=%s',
+        peer && peer.channel ? toHex(peer.channel) : null
+      )
+      return cache.replicate({ live: true })
+    }
   })
 
   await put(toHex(crypto.blake2b(publicKey)), publicKey)
@@ -283,6 +292,8 @@ async function start(argv) {
 
       warn('cache: node: join:', key)
       cache.swarm.join(crypto.blake2b(Buffer.from(key, 'hex')))
+      warn('cache: node: authorize:', key)
+      cache.authorize(Buffer.from(key, 'hex'))
     } catch (err) {
       debug(err)
       warn('cache: node: join: error:', err.message)
@@ -291,21 +302,34 @@ async function start(argv) {
 
   return true
 
-  async function get(key) {
-    const entry = await pify(cache.get.bind(cache))(key)
-    if (entry && entry.value) {
-      const timestamp = crypto.uint64.decode(entry.value)
-      const buffer = entry.value.slice(8)
-      const now = Date.now()
+  async function get(key, ttl) {
+    return pify(async (done) => {
+      let didTimeout = false
+      const timer = setTimeout(ontimeout, ttl || 1000)
+      const entry = await pify(cache.get.bind(cache))(key)
 
-      if (now - timestamp < conf['cache-ttl']) {
-        return buffer
+      clearTimeout(timer)
+
+      if (didTimeout || !entry || !entry.value) {
+        done(null)
+      } else {
+        const timestamp = crypto.uint64.decode(entry.value)
+        const buffer = entry.value.slice(8)
+        const now = Date.now()
+
+        done(null, buffer)
+
+        if (now - timestamp >= conf['cache-ttl']) {
+          debug('cache: miss:', key)
+          await del(key)
+        }
       }
 
-      await del(key)
-    }
-
-    return null
+      function ontimeout() {
+        debug('cache: get: did timeout')
+        didTimeout = true
+      }
+    })()
   }
 
   async function put(key, buffer) {
@@ -321,7 +345,8 @@ async function start(argv) {
 
   async function del(key) {
     warn('cache: del:', Date.now(), key)
-    return pify(cache.del.bind(cache))(key)
+    await pify(cache.del.bind(cache))(key)
+    await put(key, await aid.fs.readFile(key, 'ddo.json', { cache: false }))
   }
 
   function announce() {
@@ -389,6 +414,7 @@ async function start(argv) {
       const entry = await get(did.identifier)
 
       if (entry) {
+        debug('cache: hit:', did.reference)
         const buffer = entry
         const duration = Date.now() - now
         const response = createResponse({ did, buffer, duration })
@@ -414,7 +440,9 @@ async function start(argv) {
 
       try {
         const timeout = setTimeout(ontimeout, conf.timeout || REQUEST_TIMEOUT)
-        const buffer = await aid.fs.readFile(did.identifier, 'ddo.json')
+        const buffer = await aid.fs.readFile(did.identifier, 'ddo.json', {
+          cache: false
+        })
 
         clearTimeout(timeout)
 
