@@ -13,6 +13,7 @@ const jitson = require('jitson')
 const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('turbo-http')
 const pify = require('pify')
+const pump = require('pump')
 const aid = require('ara-identity')
 const pkg = require('./package.json')
 const url = require('url')
@@ -269,19 +270,25 @@ async function start(argv) {
     cache.once('ready', done).once('error', onerror)
   })
 
-  cache.swarm = createSwarm({
-    stream(peer) {
-      warn(
-        'cache: node: replicate: channel=%s host=%s',
-        peer && peer.channel ? toHex(peer.channel) : null,
-        peer && peer.host ? `${peer.host}:${peer.port}` : null,
-      )
-      return cache.replicate({ live: true })
-    }
-  })
+  cache.swarm = createSwarm({ })
 
   await put(toHex(crypto.blake2b(publicKey)), publicKey)
   cache.swarm.join(crypto.blake2b(publicKey))
+  cache.swarm.on('connection', (connection, peer) => {
+    const stream = cache.replicate({ live: true })
+
+    warn(
+      'cache: node: replicate: channel=%s host=%s',
+      peer && peer.channel ? toHex(peer.channel) : null,
+      peer && peer.host ? `${peer.host}:${peer.port}` : null,
+    )
+
+    pump(connection, stream, connection, (err) => {
+      if (err) {
+        debug(err)
+      }
+    })
+  })
 
   for (const k of conf['cache-nodes']) {
     try {
@@ -451,8 +458,6 @@ async function start(argv) {
         if (false === closed) {
           const response = createResponse({ did, buffer, duration })
           await put(did.identifier, buffer)
-
-          setTimeout(onexpire, conf['cache-ttl'])
 
           res.setHeader('content-type', 'application/json')
           res.end(response, response.length, (err) => {
