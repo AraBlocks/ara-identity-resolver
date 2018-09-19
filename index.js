@@ -272,8 +272,9 @@ async function start(argv) {
   cache.swarm = createSwarm({
     stream(peer) {
       warn(
-        'cache: node: replicate: channel=%s',
-        peer && peer.channel ? toHex(peer.channel) : null
+        'cache: node: replicate: channel=%s host=%s',
+        peer && peer.channel ? toHex(peer.channel) : null,
+        peer && peer.host ? `${peer.host}:${peer.port}` : null,
       )
       return cache.replicate({ live: true })
     }
@@ -311,6 +312,7 @@ async function start(argv) {
       clearTimeout(timer)
 
       if (didTimeout || !entry || !entry.value) {
+        debug('cache: miss:', key)
         done(null)
       } else {
         const timestamp = crypto.uint64.decode(entry.value)
@@ -320,8 +322,8 @@ async function start(argv) {
         done(null, buffer)
 
         if (now - timestamp >= conf['cache-ttl']) {
-          debug('cache: miss:', key)
-          await del(key)
+          debug('cache: expire:', key)
+          await put(key, await aid.fs.readFile(key, 'ddo.json', { cache: false }))
         }
       }
 
@@ -341,12 +343,6 @@ async function start(argv) {
 
     warn('cache: put:', timestamp, key)
     return pify(cache.put.bind(cache))(key, entry)
-  }
-
-  async function del(key) {
-    warn('cache: del:', Date.now(), key)
-    await pify(cache.del.bind(cache))(key)
-    await put(key, await aid.fs.readFile(key, 'ddo.json', { cache: false }))
   }
 
   function announce() {
@@ -475,10 +471,6 @@ async function start(argv) {
     } catch (err) {
       debug(err)
       warn('error:', err.message)
-    }
-
-    async function onexpire() {
-      await del(did.identifier)
     }
 
     function onclose() {
