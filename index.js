@@ -289,14 +289,15 @@ async function start(argv) {
   */
 
   warn('cache: swarm: join:', publicKey.toString('hex'))
-  cache.swarm.join(crypto.blake2b(publicKey))
+  cache.swarm.join(crypto.blake2b(publicKey), { announce: true })
   cache.swarm.on('connection', onconnection)
 
   for (const k of conf['cache-nodes']) {
     const did = new DID(aid.did.normalize(k))
     const key = Buffer.from(did.identifier, 'hex')
     authorize(did.identifier)
-    cache.swarm.join(crypto.blake2b(key))
+    warn('cache: swarm: node: join:', key.toString('hex'))
+    cache.swarm.join(crypto.blake2b(key), { announce: true })
   }
 
   return true
