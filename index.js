@@ -271,7 +271,7 @@ async function start(argv) {
   })
 
   cache.swarm = createSwarm({
-    id: cache.key,
+    id: cache.local.key,
     stream() {
       return cache.replicate({
         userData: cache.key,
@@ -289,7 +289,7 @@ async function start(argv) {
   */
 
   warn('cache: swarm: join:', publicKey.toString('hex'))
-  cache.swarm.join(crypto.blake2b(publicKey), { announce: true })
+  cache.swarm.join(crypto.blake2b(publicKey).toString('hex'))
   cache.swarm.on('connection', onconnection)
 
   for (const k of conf['cache-nodes']) {
@@ -297,7 +297,7 @@ async function start(argv) {
     const key = Buffer.from(did.identifier, 'hex')
     authorize(did.identifier)
     warn('cache: swarm: node: join:', key.toString('hex'))
-    cache.swarm.join(crypto.blake2b(key), { announce: true })
+    cache.swarm.join(crypto.blake2b(key).toString('hex'))
   }
 
   return true
