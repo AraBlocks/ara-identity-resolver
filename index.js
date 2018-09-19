@@ -16,6 +16,7 @@ const pify = require('pify')
 const pump = require('pump')
 const aid = require('ara-identity')
 const pkg = require('./package.json')
+const ram = require('random-access-memory')
 const url = require('url')
 const rc = require('./rc')()
 const ss = require('ara-secret-storage')
@@ -272,40 +273,23 @@ async function start(argv) {
 
   cache.swarm = createSwarm({ })
 
-  await put(toHex(crypto.blake2b(publicKey)), publicKey)
+  /**
+  // cache DDO for this identity
+  //await put(
+    //identifier,
+    //await aid.fs.readFile(identifier, 'ddo.json')
+  //)
+  */
+
+  warn('cache: swarm: join:', publicKey.toString('hex'))
   cache.swarm.join(crypto.blake2b(publicKey))
-  cache.swarm.on('connection', (connection, peer) => {
-    const stream = cache.replicate({ live: true })
-
-    warn(
-      'cache: node: replicate: channel=%s host=%s',
-      peer && peer.channel ? toHex(peer.channel) : null,
-      peer && peer.host ? `${peer.host}:${peer.port}` : null,
-    )
-
-    pump(connection, stream, connection, (err) => {
-      if (err) {
-        debug(err)
-      }
-    })
-  })
+  cache.swarm.on('connection', onconnnection(cache))
 
   for (const k of conf['cache-nodes']) {
-    try {
-      const { identifier: key } = new DID(aid.did.normalize(k))
-
-      if (64 !== key.length) {
-        throw new Error('Invalid key length for cache node.')
-      }
-
-      warn('cache: node: join:', key)
-      cache.swarm.join(crypto.blake2b(Buffer.from(key, 'hex')))
-      warn('cache: node: authorize:', key)
-      cache.authorize(Buffer.from(key, 'hex'))
-    } catch (err) {
+    createCacheNode(new DID(aid.did.normalize(k))).catch((err) => {
       debug(err)
       warn('cache: node: join: error:', err.message)
-    }
+    })
   }
 
   return true
@@ -363,6 +347,29 @@ async function start(argv) {
     )
   }
 
+  async function createCacheNode(did) {
+    if (64 !== did.identifier.length) {
+      throw new Error('Invalid key length for cache node.')
+    }
+
+    const key = Buffer.from(did.identifier, 'hex')
+    const node = hyperdb(ram, key, { firstNode: true })
+    const swarm = createSwarm({ })
+
+    await new Promise((done, onerror) => {
+      node.once('ready', done).once('error', onerror)
+    })
+
+    warn('cache: node: join:', key.toString('hex'))
+    swarm.join(crypto.blake2b(key))
+    swarm.on('connection', onconnnection(node, () => {
+      replicate(cache, node)
+    }))
+
+    warn('cache: node: authorize:', node.key.toString('hex'))
+    cache.authorize(node.key, debug)
+  }
+
   function createResponse(opts) {
     return JSON.stringify({
       didDocument: json.didDocument.parse(opts.buffer),
@@ -377,10 +384,38 @@ async function start(argv) {
     })
   }
 
+  function replicate(a, b) {
+    const x = a.replicate()
+    const y = b.replicate()
+    return pump(x, y, x, debug)
+  }
+
   function onlisten() {
     const { port } = server.address()
     info('HTTP server listening on port %s', port)
     announce()
+  }
+
+  function onconnnection(node, cb) {
+    return (connection, peer) => {
+      const stream = node.replicate({ live: true })
+
+      warn(
+        'cache: node: replicate: channel=%s host=%s',
+        peer && peer.channel ? toHex(peer.channel) : null,
+        peer && peer.host ? `${peer.host}:${peer.port}` : null,
+      )
+
+      if ('function' === typeof cb) {
+        cb()
+      }
+
+      pump(connection, stream, connection, (err) => {
+        if (err) {
+          debug(err)
+        }
+      })
+    }
   }
 
   async function onrequest(req, res) {
