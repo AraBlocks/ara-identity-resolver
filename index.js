@@ -287,7 +287,7 @@ async function start(argv) {
     join(k)
   }
 
-  cache.swarm.join(crypto.blake2b(publicKey).toString('hex'))
+  cache.swarm.join(crypto.blake2b(publicKey))
 
   return true
 
@@ -349,8 +349,7 @@ async function start(argv) {
     const key = Buffer.from(did.identifier, 'hex')
     if (await authorize(did.identifier)) {
       warn('cache: swarm: node: join:', key.toString('hex'))
-      console.log(crypto.blake2b(key).toString('hex'));
-      cache.swarm.join(crypto.blake2b(key).toString('hex'))
+      cache.swarm.join(crypto.blake2b(key))
     }
   }
 
@@ -359,6 +358,7 @@ async function start(argv) {
     const key = Buffer.from(did.identifier, 'hex')
 
     try {
+      warn('cache: checking authorization:', did.identifier)
       const auth = await pify(cache.authorized.bind(cache))(key)
       if (auth) {
         warn('cache: authorized:', did.identifier)
