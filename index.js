@@ -251,7 +251,7 @@ async function start(argv) {
     dns: { interval: conf['dns-announce-interval'] },
   })
 
-  server.listen(argv.port, onlisten)
+  server.listen(conf.port, onlisten)
   server.once('error', (err) => {
     if (err && 'EADDRINUSE' === err.code) {
       server.listen(0, onlisten)
