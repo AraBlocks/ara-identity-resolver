@@ -270,15 +270,7 @@ async function start(argv) {
     cache.once('ready', done).once('error', onerror)
   })
 
-  cache.swarm = createSwarm({
-    id: cache.local.key,
-    stream() {
-      return cache.replicate({
-        userData: cache.key,
-        live: true,
-      })
-    }
-  })
+  cache.swarm = createSwarm({ id: cache.local.key })
 
   /**
   // cache DDO for this identity
@@ -289,16 +281,13 @@ async function start(argv) {
   */
 
   warn('cache: swarm: join:', publicKey.toString('hex'))
-  cache.swarm.join(crypto.blake2b(publicKey).toString('hex'))
   cache.swarm.on('connection', onconnection)
 
   for (const k of conf['cache-nodes']) {
-    const did = new DID(aid.did.normalize(k))
-    const key = Buffer.from(did.identifier, 'hex')
-    authorize(did.identifier)
-    warn('cache: swarm: node: join:', key.toString('hex'))
-    cache.swarm.join(crypto.blake2b(key).toString('hex'))
+    join(k)
   }
+
+  cache.swarm.join(crypto.blake2b(publicKey).toString('hex'))
 
   return true
 
@@ -355,6 +344,16 @@ async function start(argv) {
     )
   }
 
+  async function join(id) {
+    const did = new DID(aid.did.normalize(id))
+    const key = Buffer.from(did.identifier, 'hex')
+    if (await authorize(did.identifier)) {
+      warn('cache: swarm: node: join:', key.toString('hex'))
+      console.log(crypto.blake2b(key).toString('hex'));
+      cache.swarm.join(crypto.blake2b(key).toString('hex'))
+    }
+  }
+
   async function authorize(id) {
     const did = new DID(aid.did.normalize(id))
     const key = Buffer.from(did.identifier, 'hex')
@@ -398,6 +397,8 @@ async function start(argv) {
 
   async function onconnection(connection, peer) {
     if (peer.id && peer.id !== cache.id && await authorize(peer.id.toString('hex'))) {
+      const stream = cache.replicate({ userData: cache.key, live: true })
+      connection.pipe(stream).pipe(connection).on('error', debug)
       warn(
         'cache: node: replicate: id=%s channel=%s host=%s',
         peer && peer.id ? toHex(peer.id) : null,
