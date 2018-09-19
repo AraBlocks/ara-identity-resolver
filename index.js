@@ -44,6 +44,7 @@ const conf = {
 let cache = null
 let server = null
 let channel = null
+const cacheNodes = new Map()
 
 const json = {
   keystore: { parse: jitson({ sampleInterval: 1 }) },
@@ -297,10 +298,29 @@ async function start(argv) {
   return true
 
   async function get(key, ttl) {
-    return pify(async (done) => {
+    const nodes = Array.from(cacheNodes).map(kv => kv[1]).concat(cache)
+    const reads = nodes.map(onnode)
+    const result = await Promise.race(reads)
+
+    debug('cache: get: reading from %s nodes', reads.length)
+
+    return result
+
+    function onnode(node) {
+      return pify(read)(node)
+    }
+
+    async function read(db, done) {
       let didTimeout = false
+      let entry = null
+
       const timer = setTimeout(ontimeout, ttl || 1000)
-      const entry = await pify(cache.get.bind(cache))(key)
+
+      try {
+        entry = await pify(db.get.bind(db))(key)
+      } catch (err) {
+        debug(err)
+      }
 
       clearTimeout(timer)
 
@@ -324,7 +344,7 @@ async function start(argv) {
         debug('cache: get: did timeout')
         didTimeout = true
       }
-    })()
+    }
   }
 
   async function put(key, buffer) {
@@ -334,8 +354,19 @@ async function start(argv) {
       buffer
     ])
 
-    warn('cache: put:', timestamp, key)
-    return pify(cache.put.bind(cache))(key, entry)
+    return Promise.all(Array.from(cacheNodes)
+      .map(kv => kv[1])
+      .concat(cache)
+      .map(onnode))
+
+    function onnode(node) {
+      return pify(write)(node)
+    }
+
+    function write(db, done) {
+      warn('cache: put:', timestamp, key)
+      return db.put(key, entry, done)
+    }
   }
 
   function announce() {
@@ -351,17 +382,32 @@ async function start(argv) {
 
   async function join(id) {
     const did = new DID(aid.did.normalize(id))
+
+    if (cacheNodes.has(did.identifier)) {
+      warn(
+        'cache: swarm: node: join: duplicate: skipping...',
+        key.toString('hex')
+      )
+      return
+    }
+
     const key = Buffer.from(did.identifier, 'hex')
-    const db = hyperdb(ram, key)
+    const db = hyperdb(ram, key, { firstNode: true })
+
+    cacheNodes.set(did.identifier, db)
 
     warn('cache: swarm: node: join:', key.toString('hex'))
-    db.swarm = createSwarm({ id: publicKey })
+    db.swarm = createSwarm({
+      stream() {
+        return db.replicate({ live: true })
+      }
+    })
+
     db.swarm.on('connection', onconnect)
     db.swarm.join(crypto.blake2b(key))
 
     function onconnect(connection, peer) {
       warn('cache: swarm: node: connection:', peer.id.toString('hex'))
-      connection.pipe(db.replicate({ live: true })).pipe(connection)
     }
   }
 
