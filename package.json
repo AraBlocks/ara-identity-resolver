@@ -39,6 +39,7 @@
     "path-to-regexp": "^2.4.0",
     "pify": "^3.0.0",
     "pump": "^3.0.0",
+    "random-access-memory": "^3.0.0",
     "turbo-http": "^0.3.0"
   },
   "devDependencies": {
