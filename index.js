@@ -15,6 +15,7 @@ const debug = require('debug')('ara:network:node:identity-resolver')
 const http = require('turbo-http')
 const pify = require('pify')
 const aid = require('ara-identity')
+const ram = require('random-access-memory')
 const pkg = require('./package.json')
 const url = require('url')
 const rc = require('./rc')()
@@ -270,7 +271,12 @@ async function start(argv) {
     cache.once('ready', done).once('error', onerror)
   })
 
-  cache.swarm = createSwarm({ id: cache.local.key })
+  cache.swarm = createSwarm({
+    id: cache.local.key,
+    stream() {
+      return cache.replicate({ live: true })
+    }
+  })
 
   /**
   // cache DDO for this identity
@@ -282,12 +288,11 @@ async function start(argv) {
 
   warn('cache: swarm: join:', publicKey.toString('hex'))
   cache.swarm.on('connection', onconnection)
+  cache.swarm.join(crypto.blake2b(publicKey))
 
   for (const k of conf['cache-nodes']) {
     join(k)
   }
-
-  cache.swarm.join(crypto.blake2b(publicKey))
 
   return true
 
@@ -347,9 +352,16 @@ async function start(argv) {
   async function join(id) {
     const did = new DID(aid.did.normalize(id))
     const key = Buffer.from(did.identifier, 'hex')
-    if (await authorize(did.identifier)) {
-      warn('cache: swarm: node: join:', key.toString('hex'))
-      cache.swarm.join(crypto.blake2b(key))
+    const db = hyperdb(ram, key)
+
+    warn('cache: swarm: node: join:', key.toString('hex'))
+    db.swarm = createSwarm({ id: publicKey })
+    db.swarm.on('connection', onconnect)
+    db.swarm.join(crypto.blake2b(key))
+
+    function onconnect(connection, peer) {
+      warn('cache: swarm: node: connection:', peer.id.toString('hex'))
+      connection.pipe(db.replicate({ live: true })).pipe(connection)
     }
   }
 
@@ -397,8 +409,6 @@ async function start(argv) {
 
   async function onconnection(connection, peer) {
     if (peer.id && peer.id !== cache.id && await authorize(peer.id.toString('hex'))) {
-      const stream = cache.replicate({ userData: cache.key, live: true })
-      connection.pipe(stream).pipe(connection).on('error', debug)
       warn(
         'cache: node: replicate: id=%s channel=%s host=%s',
         peer && peer.id ? toHex(peer.id) : null,
