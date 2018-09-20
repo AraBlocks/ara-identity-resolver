@@ -31,7 +31,7 @@ const conf = {
   // in milliseconds
   'dht-announce-interval': 2 * 60 * 1000,
   // in milliseconds
-  'cache-ttl': 10 * 1000,
+  'cache-ttl': rc.network.identity.resolver.cache.ttl,
   // path to cache data directory
   'cache-root': rc.network.identity.resolver.cache.data.root,
   // an array of public keys for hyperdb cache nodes
