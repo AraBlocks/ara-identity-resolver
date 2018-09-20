@@ -7,9 +7,8 @@ const defaults = () => ({
   network: {
     identity: {
       resolver: {
-        http: {
-          port: 8000
-        },
+        timeout: 5 * 1000,
+        port: 8000,
 
         cache: {
           nodes: [],

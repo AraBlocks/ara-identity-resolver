@@ -1,5 +1,5 @@
 {
-  "name": "ara-network-node-identity-resolver",
+  "name": "ara-identity-resolver",
   "version": "0.36.0",
   "description": "An ARA network node that resolves an identifier to its corresponding keystore",
   "main": "index.js",
@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AraBlocks/ara-network-node-identity-resolver.git"
+    "url": "git+https://github.com/AraBlocks/ara-identity-resolver.git"
   },
   "keywords": [
     "ara",
@@ -29,17 +29,21 @@
     "ara-network": "github:arablocks/ara-network",
     "ara-runtime-configuration": "github:arablocks/ara-runtime-configuration",
     "ara-secret-storage": "github:arablocks/ara-secret-storage",
+    "batch": "^0.6.1",
     "debug": "^3.1.0",
     "defined": "^1.0.0",
+    "did-document": "^0.4.0",
     "did-uri": "^0.2.4",
     "extend": "^3.0.1",
     "hyperdb": "^3.5.0",
     "inquirer": "^6.1.0",
     "jitson": "^1.0.0",
+    "ld-cryptosuite-registry": "^0.3.0",
+    "mutexify": "^1.2.0",
     "path-to-regexp": "^2.4.0",
     "pify": "^3.0.0",
-    "pump": "^3.0.0",
-    "random-access-memory": "^3.0.0",
+    "thunky": "^1.0.2",
+    "to-buffer": "^1.1.1",
     "turbo-http": "^0.3.0"
   },
   "devDependencies": {
@@ -51,7 +55,7 @@
   "author": "Prashanth Balasubramani <prashanth@littlstar.com>",
   "license": "LGPL-3.0",
   "bugs": {
-    "url": "https://github.com/AraBlocks/ara-network-node-identity-resolver/issues"
+    "url": "https://github.com/AraBlocks/ara-identity-resolver/issues"
   },
-  "homepage": "https://github.com/AraBlocks/ara-network-node-identity-resolver#readme"
+  "homepage": "https://github.com/AraBlocks/ara-identity-resolver#readme"
 }

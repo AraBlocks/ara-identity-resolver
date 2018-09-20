@@ -1,0 +1,427 @@
+/** eslint-disable loop-func */
+const { createSwarm, createChannel } = require('ara-network/discovery')
+const { parse: parseDID } = require('did-uri')
+const { unpack, keyRing } = require('ara-network/keys')
+const { info, warn } = require('ara-console')('identity-resolver')
+const { resolve } = require('path')
+const toRegExp = require('path-to-regexp')
+const { DID } = require('did-uri')
+const hyperdb = require('hyperdb')
+const jitson = require('jitson')
+const debug = require('debug')('ara:network:node:identity-resolver')
+const http = require('turbo-http')
+const pify = require('pify')
+const aid = require('ara-identity')
+const ram = require('random-access-memory')
+const pkg = require('./package.json')
+const url = require('url')
+const ss = require('ara-secret-storage')
+
+// in milliseconds
+const REQUEST_TIMEOUT = 5 * 1000
+const IDENTIFIERS_ROUTE_1_0 = toRegExp('/1.0/identifiers/:did')
+
+
+let cache = null
+let server = null
+let channel = null
+const cacheNodes = new Map()
+
+const json = {
+  keystore: { parse: jitson({ sampleInterval: 1 }) },
+  didDocument: { parse: jitson({ sampleInterval: 1 }) },
+}
+
+async function start(argv) {
+  const { identifier } = new DID(conf.identity)
+
+  let secretKey = null
+  let publicKey = null
+  let keyring = null
+
+
+  // attempt to decode keyring with a supplied secret falling
+  // back to an authenticated decode with the identity associated
+  // with this network node
+  try {
+    const secret = Buffer.from(conf.secret)
+    keyring = keyRing(conf.keyring, { secret })
+
+    await keyring.ready()
+
+    const buffer = await keyring.get(conf.network)
+    const unpacked = unpack({ buffer })
+    Object.assign(conf, { discoveryKey: unpacked.discoveryKey })
+  } catch (err) {
+    debug(err)
+
+    try {
+      const key = password.slice(0, 16)
+      const keystore = json.keystore.parse(await aid.fs.readFile(
+        conf.identity,
+        'keystore/ara'
+      ))
+
+      publicKey = Buffer.from(identifier, 'hex')
+      secretKey = ss.decrypt(keystore, { key })
+      keyring = keyRing(conf.keyring, { secret: secretKey })
+
+      await keyring.ready()
+
+      const buffer = await keyring.get(conf.network)
+      Object.assign(conf, unpack({ buffer }))
+    } catch (err) { // eslint-disable-line no-shadow
+      debug(err)
+      throw new Error('Unable to decode keys in keyring for identity.')
+    }
+  }
+
+  const announcementTimeout = setTimeout(announce, 1000)
+
+  channel = createChannel({
+  })
+
+  server.listen(conf.port, onlisten)
+  server.once('error', (err) => {
+    if (err && 'EADDRINUSE' === err.code) {
+      server.listen(0, onlisten)
+    }
+  })
+
+  cache = hyperdb(resolve(conf['cache-root'], identifier), publicKey, {
+    // dont store secretKey on disk
+    storeSecretKey: false,
+    // set to true to reduce the nodes array to the first node in it
+    firstNode: true,
+    secretKey,
+  })
+
+  await new Promise((done, onerror) => {
+    cache.once('ready', done).once('error', onerror)
+  })
+
+  cache.swarm = createSwarm({
+    id: cache.local.key,
+    stream() {
+      return cache.replicate({ live: true })
+    }
+  })
+
+  /**
+  // cache DDO for this identity
+  //await put(
+    //identifier,
+    //await aid.fs.readFile(identifier, 'ddo.json')
+  //)
+  */
+
+  warn('cache: swarm: join:', publicKey.toString('hex'))
+  cache.swarm.on('connection', onconnection)
+  cache.swarm.join(crypto.blake2b(publicKey))
+
+  for (const k of conf['cache-nodes']) {
+    join(k)
+  }
+
+  return true
+
+  async function get(key, ttl) {
+    const nodes = Array.from(cacheNodes).map(kv => kv[1]).concat(cache)
+    const reads = nodes.map(onnode)
+    const result = await Promise.race(reads)
+
+    debug('cache: get: reading from %s nodes', reads.length)
+
+    return result
+
+    function onnode(node) {
+      return pify(read)(node)
+    }
+
+    async function read(db, done) {
+      let didTimeout = false
+      let entry = null
+
+      const timer = setTimeout(ontimeout, ttl || 1000)
+
+      try {
+        entry = await pify(db.get.bind(db))(key)
+      } catch (err) {
+        debug(err)
+      }
+
+      clearTimeout(timer)
+
+      if (didTimeout || !entry || !entry.value) {
+        debug('cache: miss:', key)
+        done(null)
+      } else {
+        const timestamp = crypto.uint64.decode(entry.value)
+        const buffer = entry.value.slice(8)
+        const now = Date.now()
+
+        done(null, buffer)
+
+        if (now - timestamp >= conf['cache-ttl']) {
+          debug('cache: expire:', key)
+          await put(key, await aid.fs.readFile(key, 'ddo.json', { cache: false }))
+        }
+      }
+
+      function ontimeout() {
+        debug('cache: get: did timeout')
+        didTimeout = true
+      }
+    }
+  }
+
+  async function put(key, buffer) {
+    const timestamp = Date.now()
+    const entry = Buffer.concat([
+      crypto.uint64.encode(timestamp),
+      buffer
+    ])
+
+    return Promise.all(Array.from(cacheNodes)
+      .map(kv => kv[1])
+      .concat(cache)
+      .map(onnode))
+
+    function onnode(node) {
+      return pify(write)(node)
+    }
+
+    function write(db, done) {
+      warn('cache: put:', timestamp, key)
+      return db.put(key, entry, done)
+    }
+  }
+
+  function announce() {
+    const { port } = server.address()
+    clearTimeout(announcementTimeout)
+    channel.join(conf.discoveryKey, port)
+   info(
+      'Announcing %s on port %s',
+      toHex(conf.discoveryKey),
+      port
+    )
+  }
+
+  async function join(id) {
+    const did = new DID(aid.did.normalize(id))
+
+    if (cacheNodes.has(did.identifier)) {
+      warn(
+        'cache: swarm: node: join: duplicate: skipping...',
+        key.toString('hex')
+      )
+      return
+    }
+
+    const key = Buffer.from(did.identifier, 'hex')
+    const db = hyperdb(ram, key, { firstNode: true })
+
+    cacheNodes.set(did.identifier, db)
+
+    warn('cache: swarm: node: join:', key.toString('hex'))
+    db.swarm = createSwarm({
+      stream() {
+        return db.replicate({ live: true })
+      }
+    })
+
+    db.swarm.on('connection', onconnect)
+    db.swarm.join(crypto.blake2b(key))
+
+    function onconnect(connection, peer) {
+      warn('cache: swarm: node: connection:', peer.id.toString('hex'))
+    }
+  }
+
+  async function authorize(id) {
+    const did = new DID(aid.did.normalize(id))
+    const key = Buffer.from(did.identifier, 'hex')
+
+    try {
+      warn('cache: checking authorization:', did.identifier)
+      const auth = await pify(cache.authorized.bind(cache))(key)
+      if (auth) {
+        warn('cache: authorized:', did.identifier)
+      } else {
+        warn('cache: authorizing:', did.identifier)
+        await pify(cache.authorize.bind(cache))(key)
+        warn('cache: authorized:', did.identifier)
+      }
+
+      return true
+    } catch (err) {
+      debug(err)
+      return false
+    }
+  }
+
+  function createResponse(opts) {
+    return JSON.stringify({
+      didDocument: json.didDocument.parse(opts.buffer),
+      didReference: opts.did,
+      methodMetadata: {},
+      resolverMetadata: {
+        retrieved: new Date(),
+        duration: opts.duration,
+        driverId: 'did:ara',
+        driver: 'HttpDriver',
+      }
+    })
+  }
+
+  function onlisten() {
+    const { port } = server.address()
+    info('HTTP server listening on port %s', port)
+    announce()
+  }
+
+  async function onconnection(connection, peer) {
+    if (peer.id && peer.id !== cache.id && await authorize(peer.id.toString('hex'))) {
+      warn(
+        'cache: node: replicate: id=%s channel=%s host=%s',
+        peer && peer.id ? toHex(peer.id) : null,
+        peer && peer.channel ? toHex(peer.channel) : null,
+        peer && peer.host ? `${peer.host}:${peer.port}` : null,
+      )
+    }
+  }
+
+  async function onrequest(req, res) {
+    debug('onrequest:', req.method, req.url)
+
+    let didTimeout = false
+    let closed = false
+    let did = null
+
+    if ('GET' !== req.method.toUpperCase()) {
+      notFound()
+      return
+    }
+
+    try {
+      const uri = url.parse(req.url)
+      req.params = IDENTIFIERS_ROUTE_1_0.exec(uri.pathname).slice(1)
+    } catch (err) {
+      debug(err)
+      notFound()
+      return
+    }
+
+    if (!req.params || 0 === req.params.length) {
+      notFound()
+      return
+    }
+
+    const now = Date.now()
+
+    try {
+      did = parseDID(req.params[0])
+      debug('ondid:', did.reference)
+      const entry = await get(did.identifier)
+
+      if (entry) {
+        debug('cache: hit:', did.reference)
+        const buffer = entry
+        const duration = Date.now() - now
+        const response = createResponse({ did, buffer, duration })
+        res.setHeader('content-type', 'application/json')
+        res.end(response, response.length, (err) => {
+          if (err) {
+            debug(err)
+          } else {
+            info('%s: send ddo.json (cache)', did.identifier)
+          }
+        })
+        return
+      }
+
+      if ('ara' !== did.method) {
+        debug(`${did.method} method is not implemented`)
+        notImplemented()
+        return
+      }
+
+      req.socket.on('close', onclose)
+      req.socket.on('end', onclose)
+
+      try {
+        const timeout = setTimeout(ontimeout, conf.timeout || REQUEST_TIMEOUT)
+        const buffer = await aid.fs.readFile(did.identifier, 'ddo.json', {
+          cache: false
+        })
+
+        clearTimeout(timeout)
+
+        if (didTimeout) {
+          return
+        }
+
+        const duration = Date.now() - now
+
+        if (false === closed) {
+          const response = createResponse({ did, buffer, duration })
+          await put(did.identifier, buffer)
+
+          res.setHeader('content-type', 'application/json')
+          res.end(response, response.length, (err) => {
+            if (err) {
+              debug(err)
+            } else {
+              info('%s: send ddo.json (cache)', did.identifier)
+            }
+          })
+          info('%s: send ddo.json', did.identifier)
+        }
+      } catch (err) {
+        debug(err)
+        internalError()
+      }
+    } catch (err) {
+      debug(err)
+      warn('error:', err.message)
+    }
+
+    function onclose() {
+      closed = true
+    }
+
+    async function ontimeout() {
+      warn('request did timeout for', did.reference)
+      didTimeout = true
+      notFound()
+    }
+
+    function notImplemented() {
+      if (false === closed) {
+        res.statusCode = 503
+        res.end()
+      }
+    }
+
+    function notFound() {
+      if (false === closed) {
+        res.statusCode = 404
+        res.end()
+      }
+    }
+
+    function internalError() {
+      if (false === closed) {
+        res.statusCode = 500
+        res.end()
+      }
+    }
+  }
+}
+
+module.exports = {
+  getInstance,
+  configure,
+  start,
+}
