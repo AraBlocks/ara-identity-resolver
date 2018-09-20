@@ -1,5 +1,6 @@
 <img src="https://github.com/AraBlocks/docs/blob/master/ara.png" width="30" height="30" />
 Ara Identity Resolver
+
 =====================
 
 [![Build Status](https://travis-ci.com/AraBlocks/ara-identity-resolver.svg?token=Ty4yTmKT8aELetQd1xZp&branch=master)](https://travis-ci.com/AraBlocks/ara-identity-resolver)
