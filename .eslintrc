@@ -1,6 +1,8 @@
 {
   "extends": "ara",
   "rules": {
-    "no-inner-declarations": 0
+    "no-inner-declarations": 0,
+    "no-bitwise": "off",
+    "class-methods-use-this": "off"
   }
 }
