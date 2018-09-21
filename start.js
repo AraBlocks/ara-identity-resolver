@@ -1,14 +1,9 @@
+const { hasInstance, setInstance } = require('./instance')
 const { ResolverNetworkNode } = require('./lib/node')
-const { setInstance } = require('./instance')
 const { info, warn } = require('ara-console')('identity-resolver')
 const inquirer = require('inquirer')
 const debug = require('debug')('ara:identity:resolver:start')
 const conf = require('./conf')
-
-const STARTING = 1
-const STARTED = 2
-const BUSY = STARTING | STARTED
-let status = 0
 
 /**
  * The start function initializes and starts the
@@ -18,32 +13,24 @@ let status = 0
  * @return {Boolean}
  */
 async function start(argv) {
-  if (BUSY === status & BUSY) {
+  if (hasInstance()) {
     return false
   }
-
-  debug('status |= STARTING')
-  info('Starting')
-  status |= STARTING
 
   conf.password = await resolvePassword(argv)
   const node = new ResolverNetworkNode(conf)
 
-  info('Initializing')
-  await node.ready()
-  info('Ready')
+  node.once('ready', () => info('Node ready'))
+  node.once('start', () => info('Node started'))
+
+  info('Starting')
+  await node.start()
 
   const { address, port } = node.server.address()
   info('Listening on http://%s:%d', address, port)
 
+  debug('setting instance')
   await setInstance(node)
-
-  debug('status |= STARTED')
-  status |= STARTED
-  info('Started')
-
-  // reset status when node closes
-  node.once('close', () => { status = 0 })
 
   return true
 }
@@ -58,6 +45,8 @@ async function start(argv) {
  */
 async function resolvePassword(argv) {
   let { password } = argv
+
+  debug('resolving password')
 
   if (password) {
     warn('Accepting password from command line (--password).')
