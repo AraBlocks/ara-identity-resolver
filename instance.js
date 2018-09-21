@@ -30,7 +30,18 @@ async function setInstance(value) {
   }
 }
 
+/**
+ * Predicate function to return a boolean indicating
+ * that module has an instance, or not.
+ * @public
+ * @return {Boolean}
+ */
+function hasInstance() {
+  return Boolean(null !== instance)
+}
+
 module.exports = {
   getInstance,
+  hasInstance,
   setInstance
 }
