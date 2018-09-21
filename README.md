@@ -171,6 +171,14 @@ which was used to secure your keyring. `keyring.pub` is actually the
 shared or _public_ version of the keyring which can be delegated to
 other interested partities.
 
+### Cache
+
+TODO
+
+#### Swarm
+
+TODO
+
 ## See Also
 
 * [ara-network](https://github.com/arablocks/ara-network)
