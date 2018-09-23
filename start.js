@@ -1,13 +1,13 @@
 const { hasInstance, setInstance } = require('./instance')
-const { ResolverNetworkNode } = require('./lib/node')
 const { info, warn } = require('ara-console')('identity-resolver')
+const { Resolver } = require('./lib/resolver')
 const inquirer = require('inquirer')
 const debug = require('debug')('ara:identity:resolver:start')
 const conf = require('./conf')
 
 /**
  * The start function initializes and starts the
- * identity resolver network node service.
+ * identity resolver network resolver service.
  * @public
  * @param {Object} argv
  * @return {Boolean}
@@ -18,19 +18,19 @@ async function start(argv) {
   }
 
   conf.password = await resolvePassword(argv)
-  const node = new ResolverNetworkNode(conf)
+  const resolver = new Resolver(conf)
 
-  node.once('ready', () => info('Node ready'))
-  node.once('start', () => info('Node started'))
+  resolver.once('ready', () => info('resolver ready'))
+  resolver.once('start', () => info('resolver started'))
 
   info('Starting')
-  await node.start()
+  await resolver.start()
 
-  const { address, port } = node.server.address()
+  const { address, port } = resolver.server.address()
   info('Listening on http://%s:%d', address, port)
 
   debug('setting instance')
-  await setInstance(node)
+  await setInstance(resolver)
 
   return true
 }
@@ -55,7 +55,7 @@ async function resolvePassword(argv) {
       type: 'password',
       name: 'password',
       message:
-      'Please enter the passphrase associated with the node identity.\n' +
+      'Please enter the passphrase associated with the resolver identity.\n' +
       'Passphrase:'
     } ])
 
