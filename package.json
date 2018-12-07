@@ -30,6 +30,7 @@
     "ara-runtime-configuration": "github:arablocks/ara-runtime-configuration",
     "ara-secret-storage": "github:arablocks/ara-secret-storage",
     "batch": "^0.6.1",
+    "cors": "^2.8.5",
     "debug": "^3.1.0",
     "defined": "^1.0.0",
     "did-document": "^0.4.0",
