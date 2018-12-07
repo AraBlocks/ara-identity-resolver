@@ -13,9 +13,12 @@ async function configure(opts, program) {
       .group([ 'identity', 'secret', 'keyring', 'network' ], 'Network Options:')
       .option('identity', {
         alias: 'i',
-        default: rc.network.identity.whoami,
         requiresArg: true,
         required: true,
+        default:
+          rc.network.identity.resolver.whoami ||
+          rc.network.identity.whoami ||
+          rc.network.whoami,
 
         defaultDescription: (
           rc.network.identity.whoami
@@ -33,19 +36,27 @@ prompted for the associated passphrase`,
         describe: 'Shared secret key for the associated network keys',
         required: true,
         requiresArg: true,
+        default:
+          rc.network.identity.resolver.secret ||
+          rc.network.identity.secret ||
+          rc.network.secret,
       })
       .option('keyring', {
         alias: 'k',
-        default: rc.network.identity.keyring,
         describe: 'Path to Ara network keyring file',
         required: true,
         requiresArg: true,
+        default:
+          rc.network.identity.resolver.keyring ||
+          rc.network.identity.keyring ||
+          rc.network.keyring,
       })
       .option('network', {
         alias: 'n',
         describe: 'Human readable network name for keys in keyring',
         required: true,
         requiresArg: true,
+        default: rc.network.identity.resolver.network
       })
 
     program.group([
