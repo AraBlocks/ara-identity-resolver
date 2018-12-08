@@ -1,3 +1,12 @@
+# [0.42.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.41.0...0.42.0) (2018-12-08)
+
+
+### Bug Fixes
+
+* **lib/drivers/ara.js:** Account for DNS in DID identifier ([36ee8fc](https://github.com/AraBlocks/ara-identity-resolver/commit/36ee8fc))
+
+
+
 # [0.41.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.39.0...0.41.0) (2018-12-07)
 
 
