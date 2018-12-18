@@ -1,3 +1,12 @@
+## [0.42.7](https://github.com/AraBlocks/ara-identity-resolver/compare/0.42.6...0.42.7) (2018-12-18)
+
+
+### Bug Fixes
+
+* **lib/drivers/ara.js:** Restore resolution logic ([130aeac](https://github.com/AraBlocks/ara-identity-resolver/commit/130aeac))
+
+
+
 ## [0.42.6](https://github.com/AraBlocks/ara-identity-resolver/compare/0.42.5...0.42.6) (2018-12-18)
 
 
