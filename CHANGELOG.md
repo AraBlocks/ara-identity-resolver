@@ -1,3 +1,12 @@
+## [0.42.8](https://github.com/AraBlocks/ara-identity-resolver/compare/0.42.7...0.42.8) (2018-12-18)
+
+
+### Bug Fixes
+
+* **lib/http.js:** Check for route match ([a9b157e](https://github.com/AraBlocks/ara-identity-resolver/commit/a9b157e))
+
+
+
 ## [0.42.7](https://github.com/AraBlocks/ara-identity-resolver/compare/0.42.6...0.42.7) (2018-12-18)
 
 
