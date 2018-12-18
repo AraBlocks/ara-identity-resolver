@@ -1,3 +1,12 @@
+## [0.42.6](https://github.com/AraBlocks/ara-identity-resolver/compare/0.42.5...0.42.6) (2018-12-18)
+
+
+### Bug Fixes
+
+* **lib/http.js:** Fix 'ontimeout' calling 'res.end()' for every request ([af1b805](https://github.com/AraBlocks/ara-identity-resolver/commit/af1b805))
+
+
+
 ## [0.42.5](https://github.com/AraBlocks/ara-identity-resolver/compare/0.42.4...0.42.5) (2018-12-13)
 
 
