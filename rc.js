@@ -7,12 +7,12 @@ const defaults = () => ({
   network: {
     identity: {
       resolver: {
-        timeout: 1 * 1000,
+        timeout: 2 * 1000,
         port: 8000,
 
         cache: {
           nodes: [],
-          ttl: 10 * 1000,
+          ttl: 30 * 1000,
           data: {
             root: resolve(rc().data.root, 'identities', 'cache')
           }
