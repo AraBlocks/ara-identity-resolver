@@ -8,6 +8,7 @@ const defaults = () => ({
     identity: {
       resolver: {
         timeout: 2 * 1000,
+        address: '0.0.0.0',
         port: 8000,
 
         cache: {
