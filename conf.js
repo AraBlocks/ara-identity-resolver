@@ -25,5 +25,8 @@ set('cache-nodes', rc.network.identity.resolver.cache.nodes || [])
 // http request timeout in milliseconds
 set('timeout', rc.network.identity.resolver.timeout)
 
+// address for http server to listen on (default: 0.0.0.0)
+set('address', rc.network.identity.resolver.address)
+
 // http server port to listen on
 set('port', rc.network.identity.resolver.port)
