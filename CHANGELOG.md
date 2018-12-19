@@ -1,3 +1,14 @@
+# [0.44.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.43.0...0.44.0) (2018-12-19)
+
+
+### Features
+
+* **conf.js:** Introduce 'conf.address' from 'rc.network.identity.resolver.address' ([c659744](https://github.com/AraBlocks/ara-identity-resolver/commit/c659744))
+* **lib/http.js:** Support listening for on address ([b44d812](https://github.com/AraBlocks/ara-identity-resolver/commit/b44d812))
+* **rc.js:** Add 'rc.identity.resolver.address' ([1611832](https://github.com/AraBlocks/ara-identity-resolver/commit/1611832))
+
+
+
 # [0.43.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.42.10...0.43.0) (2018-12-19)
 
 
