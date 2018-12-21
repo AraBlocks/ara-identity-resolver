@@ -1,3 +1,12 @@
+## [0.44.1](https://github.com/AraBlocks/ara-identity-resolver/compare/0.44.0...0.44.1) (2018-12-21)
+
+
+### Bug Fixes
+
+* **lib/cache.js:** Resolve identity before adding peer ([95502cf](https://github.com/AraBlocks/ara-identity-resolver/commit/95502cf))
+
+
+
 # [0.44.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.43.0...0.44.0) (2018-12-19)
 
 
