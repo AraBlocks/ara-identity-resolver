@@ -1,3 +1,12 @@
+## [0.44.2](https://github.com/AraBlocks/ara-identity-resolver/compare/0.44.1...0.44.2) (2019-01-10)
+
+
+### Bug Fixes
+
+* **lib/drivers/ara.js:** Reset timeout on second ddo resolution attempt ([a6e3b8a](https://github.com/AraBlocks/ara-identity-resolver/commit/a6e3b8a))
+
+
+
 ## [0.44.1](https://github.com/AraBlocks/ara-identity-resolver/compare/0.44.0...0.44.1) (2018-12-21)
 
 
