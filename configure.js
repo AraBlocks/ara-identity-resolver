@@ -60,7 +60,7 @@ prompted for the associated passphrase`,
       })
 
     program.group([
-      'port', 'timeout',
+      'port', 'address', 'timeout',
       'cache-ttl', 'cache-root', 'cache-node',
     ], 'Server Options:')
       .option('port', {
@@ -68,6 +68,11 @@ prompted for the associated passphrase`,
         alias: 'p',
         default: conf.port,
         describe: 'Port for network node to listen on.',
+      })
+      .option('address', {
+        type: 'string',
+        default: conf.address,
+        describe: 'Network address to listen on',
       })
       .option('timeout', {
         type: 'number',
