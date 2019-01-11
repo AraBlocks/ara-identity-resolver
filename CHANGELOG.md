@@ -1,3 +1,13 @@
+## [0.44.4](https://github.com/AraBlocks/ara-identity-resolver/compare/0.44.3...0.44.4) (2019-01-11)
+
+
+### Bug Fixes
+
+* **configure.js:** Allow 'address to be configurable from cli ([f41fbec](https://github.com/AraBlocks/ara-identity-resolver/commit/f41fbec))
+* **lib/http.js:** Handle 'null' cache entries and propagate 'server' to driver ([f3386b3](https://github.com/AraBlocks/ara-identity-resolver/commit/f3386b3))
+
+
+
 ## [0.44.3](https://github.com/AraBlocks/ara-identity-resolver/compare/0.44.2...0.44.3) (2019-01-11)
 
 
