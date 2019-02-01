@@ -1,3 +1,12 @@
+# [0.45.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.44.5...0.45.0) (2019-02-01)
+
+
+### Features
+
+* **.:** Support 'uport,eth,ethr,https' drivers ([8491393](https://github.com/AraBlocks/ara-identity-resolver/commit/8491393))
+
+
+
 ## [0.44.5](https://github.com/AraBlocks/ara-identity-resolver/compare/0.44.4...0.44.5) (2019-01-14)
 
 
