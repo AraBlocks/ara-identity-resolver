@@ -1,3 +1,17 @@
+# [0.47.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.46.6...0.47.0) (2019-02-05)
+
+
+### Bug Fixes
+
+* **lib/http.js:** Fix preemptive cache locks and logic ([c2c31bc](https://github.com/AraBlocks/ara-identity-resolver/commit/c2c31bc))
+
+
+### Features
+
+* **lib/drivers/ara.js:** Cache results in TMPDIR leveraging stats for refresh ([ee1db03](https://github.com/AraBlocks/ara-identity-resolver/commit/ee1db03))
+
+
+
 ## [0.46.6](https://github.com/AraBlocks/ara-identity-resolver/compare/0.46.5...0.46.6) (2019-02-05)
 
 
