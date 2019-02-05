@@ -35,7 +35,7 @@
     "cors": "^2.8.5",
     "debug": "^3.1.0",
     "defined": "^1.0.0",
-    "did-document": "^0.5.7",
+    "did-document": "^0.6.1",
     "did-resolver": "0.0.6",
     "did-uri": "^0.2.8",
     "eth-did-resolver": "^0.1.1",
