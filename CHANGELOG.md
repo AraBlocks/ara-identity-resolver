@@ -1,3 +1,12 @@
+## [0.46.4](https://github.com/AraBlocks/ara-identity-resolver/compare/0.46.3...0.46.4) (2019-02-05)
+
+
+### Bug Fixes
+
+* **lib/drivers.js:** Fix resolution in drivers ([80ad0a1](https://github.com/AraBlocks/ara-identity-resolver/commit/80ad0a1))
+
+
+
 ## [0.46.3](https://github.com/AraBlocks/ara-identity-resolver/compare/0.46.2...0.46.3) (2019-02-05)
 
 
