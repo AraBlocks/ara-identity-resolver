@@ -1,6 +1,6 @@
 {
   "name": "ara-identity-resolver",
-  "version": "0.48.0",
+  "version": "0.49.0",
   "description": "An ARA network node that resolves an identifier to its corresponding keystore",
   "main": "index.js",
   "scripts": {
