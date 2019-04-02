@@ -5,7 +5,7 @@ async function stop() {
   const node = await getInstance()
 
   warn('Stopping identity resolver network node.')
-  await node.close()
+  await node.stop()
   warn('Stopped')
   setInstance(null)
   return true
