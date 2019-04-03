@@ -1,3 +1,14 @@
+## [0.50.1](https://github.com/AraBlocks/ara-identity-resolver/compare/0.50.0...0.50.1) (2019-04-03)
+
+
+### Bug Fixes
+
+* **lib/channel.js:** use 'this.channel.destroy()' instead ([eece36e](https://github.com/AraBlocks/ara-identity-resolver/commit/eece36e))
+* **lib/http.js:** Handle bad address names and used/bad ports ([370f521](https://github.com/AraBlocks/ara-identity-resolver/commit/370f521))
+* **rc.js:** Fix rc extend order ([302a6b3](https://github.com/AraBlocks/ara-identity-resolver/commit/302a6b3))
+
+
+
 # [0.50.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.49.0...0.50.0) (2019-04-02)
 
 
