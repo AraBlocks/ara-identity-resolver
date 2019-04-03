@@ -23,11 +23,11 @@ const defaults = () => ({
   }
 })
 
-module.exports = conf => rc(extend(
+module.exports = conf => extend(
   true,
   {},
   require('ara-identity/rc')(),
   require('ara-network/rc')(),
   defaults(),
-  conf
-))
+  rc(conf),
+)
