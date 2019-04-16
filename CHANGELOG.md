@@ -1,3 +1,12 @@
+## [0.50.2](https://github.com/AraBlocks/ara-identity-resolver/compare/0.50.1...0.50.2) (2019-04-16)
+
+
+### Bug Fixes
+
+* **lib/cache.js:** Debug hyperdb errors ([4a03d8d](https://github.com/AraBlocks/ara-identity-resolver/commit/4a03d8d))
+
+
+
 ## [0.50.1](https://github.com/AraBlocks/ara-identity-resolver/compare/0.50.0...0.50.1) (2019-04-03)
 
 
