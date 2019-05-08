@@ -41,6 +41,7 @@
     "eth-did-resolver": "^0.1.1",
     "ethr-did-resolver": "^0.2.0",
     "extend": "^3.0.1",
+    "github-did-resolver": "^0.1.0",
     "https-did-resolver": "^0.1.0",
     "hyperdb": "^3.5.0",
     "inquirer": "^6.1.0",
