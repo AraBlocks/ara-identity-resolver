@@ -1,3 +1,12 @@
+# [0.51.0](https://github.com/AraBlocks/ara-identity-resolver/compare/0.50.2...0.51.0) (2019-05-08)
+
+
+### Features
+
+* **.:** Introduce 'did:github:' driver ([e036ded](https://github.com/AraBlocks/ara-identity-resolver/commit/e036ded))
+
+
+
 ## [0.50.2](https://github.com/AraBlocks/ara-identity-resolver/compare/0.50.1...0.50.2) (2019-04-16)
 
 
